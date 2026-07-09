@@ -93,3 +93,42 @@ The EPUB import pipeline now removes Project Gutenberg boilerplate when standard
 Questa versione aggiunge una pulizia EPUB più robusta per evitare che front matter, indici duplicati e file di navigazione finiscano nelle statistiche linguistiche.
 
 In particolare, per EPUB Project Gutenberg come Alice, il testo analizzato parte dal vero primo capitolo invece che da titolo, indice e note editoriali.
+
+## Milestone 2 — SQLite minima
+
+CorpusLens può ora creare un database SQLite locale per ricordare corpus, libri EPUB importati, capitoli estratti e run di analisi.
+
+Database predefinito:
+
+```powershell
+./data/corpuslens.db
+```
+
+Crea un corpus:
+
+```powershell
+dotnet run --project src/CorpusLens.Cli -- corpus create "English Kids" --language en
+```
+
+Elenca i corpus:
+
+```powershell
+dotnet run --project src/CorpusLens.Cli -- corpus list
+```
+
+Analizza un EPUB e salva importazione/run nel database:
+
+```powershell
+dotnet run --project src/CorpusLens.Cli -- analyze-epub ./samples/epubs/alice.epub --language en --corpus "English Kids" --out ./artifacts/alice
+```
+
+Per usare un percorso database esplicito aggiungi:
+
+```powershell
+--db ./data/corpuslens.db
+```
+
+Dettagli tecnici: `docs/milestone-2-sqlite-persistence.md`.
+
+
+Note SQLite: the project pins SQLitePCLRaw.bundle_e_sqlite3 3.0.3 to avoid restoring the vulnerable SQLitePCLRaw.lib.e_sqlite3 2.1.11 transitive dependency.

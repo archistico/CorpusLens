@@ -1,6 +1,8 @@
 using CorpusLens.Application.EpubAnalysis;
+using CorpusLens.Application.Storage;
 using CorpusLens.Application.TextAnalysis;
 using CorpusLens.Domain.Analysis;
+using CorpusLens.Domain.Storage;
 
 namespace CorpusLens.Cli;
 
@@ -32,6 +34,7 @@ public static class Program
             return command switch
             {
                 "demo" => await RunDemoAsync(commandArgs).ConfigureAwait(false),
+                "corpus" => await RunCorpusAsync(commandArgs).ConfigureAwait(false),
                 "analyze-text" => await AnalyzeTextFileAsync(commandArgs).ConfigureAwait(false),
                 "analyze-epub" => await AnalyzeEpubAsync(commandArgs).ConfigureAwait(false),
                 _ => UnknownCommand(command)
@@ -61,6 +64,92 @@ public static class Program
 
         WriteResult(result);
         return 0;
+    }
+
+    private static async Task<int> RunCorpusAsync(string[] args)
+    {
+        if (args.Length == 0)
+        {
+            WriteCorpusHelp();
+            return 1;
+        }
+
+        string subCommand = args[0];
+        string[] subCommandArgs = args.Skip(1).ToArray();
+
+        return subCommand switch
+        {
+            "create" => await CreateCorpusAsync(subCommandArgs).ConfigureAwait(false),
+            "list" => await ListCorporaAsync(subCommandArgs).ConfigureAwait(false),
+            _ => UnknownCorpusCommand(subCommand)
+        };
+    }
+
+    private static async Task<int> CreateCorpusAsync(string[] args)
+    {
+        if (args.Length == 0)
+        {
+            Console.Error.WriteLine("Missing corpus name.");
+            Console.Error.WriteLine();
+            WriteCorpusHelp();
+            return 1;
+        }
+
+        string name = args[0];
+        CommandLineOptions options = CommandLineOptions.Parse(args.Skip(1).ToArray());
+        string languageCode = options.Get("language", "en");
+        string? description = options.TryGet("description");
+        string databasePath = options.Get("db", DefaultDatabasePath());
+
+        CreateCorpusUseCase useCase = new();
+        StoredCorpus corpus = await useCase.ExecuteAsync(new CreateCorpusRequest(
+            databasePath,
+            name,
+            languageCode,
+            description))
+            .ConfigureAwait(false);
+
+        Console.WriteLine("Corpus created.");
+        Console.WriteLine($"Id:       {corpus.Id}");
+        Console.WriteLine($"Name:     {corpus.Name}");
+        Console.WriteLine($"Language: {corpus.LanguageCode}");
+        Console.WriteLine($"Database: {databasePath}");
+        return 0;
+    }
+
+    private static async Task<int> ListCorporaAsync(string[] args)
+    {
+        CommandLineOptions options = CommandLineOptions.Parse(args);
+        string databasePath = options.Get("db", DefaultDatabasePath());
+
+        ListCorporaUseCase useCase = new();
+        IReadOnlyList<StoredCorpus> corpora = await useCase.ExecuteAsync(new ListCorporaRequest(databasePath))
+            .ConfigureAwait(false);
+
+        Console.WriteLine($"Database: {databasePath}");
+        if (corpora.Count == 0)
+        {
+            Console.WriteLine("No corpora found.");
+            return 0;
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("Id  Language  Name");
+        Console.WriteLine("--  --------  ----");
+        foreach (StoredCorpus corpus in corpora)
+        {
+            Console.WriteLine($"{corpus.Id,-2}  {corpus.LanguageCode,-8}  {corpus.Name}");
+        }
+
+        return 0;
+    }
+
+    private static int UnknownCorpusCommand(string command)
+    {
+        Console.Error.WriteLine($"Unknown corpus command: {command}");
+        Console.Error.WriteLine();
+        WriteCorpusHelp();
+        return 1;
     }
 
     private static async Task<int> AnalyzeTextFileAsync(string[] args)
@@ -108,16 +197,34 @@ public static class Program
 
         string languageCode = options.Get("language", "en");
         string outputDirectory = options.Get("out", "./artifacts/epub-analysis");
+        string? corpusName = options.TryGet("corpus");
 
-        AnalyzeEpubUseCase useCase = new();
-        AnalyzeEpubResult result = await useCase.ExecuteAsync(new AnalyzeEpubRequest(
+        if (string.IsNullOrWhiteSpace(corpusName))
+        {
+            AnalyzeEpubUseCase useCase = new();
+            AnalyzeEpubResult result = await useCase.ExecuteAsync(new AnalyzeEpubRequest(
+                filePath,
+                languageCode,
+                outputDirectory,
+                DefaultSettings()))
+                .ConfigureAwait(false);
+
+            WriteResult(result);
+            return 0;
+        }
+
+        string databasePath = options.Get("db", DefaultDatabasePath());
+        AnalyzeEpubAndSaveUseCase saveUseCase = new();
+        AnalyzeEpubAndSaveResult savedResult = await saveUseCase.ExecuteAsync(new AnalyzeEpubAndSaveRequest(
             filePath,
             languageCode,
             outputDirectory,
-            DefaultSettings()))
+            DefaultSettings(),
+            databasePath,
+            corpusName))
             .ConfigureAwait(false);
 
-        WriteResult(result);
+        WriteResult(savedResult, databasePath);
         return 0;
     }
 
@@ -131,6 +238,11 @@ public static class Program
             TopWordsForNextWordAnalysis = 1000,
             MinNextWordPairCount = 2
         };
+    }
+
+    private static string DefaultDatabasePath()
+    {
+        return "./data/corpuslens.db";
     }
 
     private static int UnknownCommand(string command)
@@ -163,17 +275,38 @@ public static class Program
         Console.WriteLine($"Next CSV:   {result.NextWordsCsvPath}");
     }
 
+    private static void WriteResult(AnalyzeEpubAndSaveResult result, string databasePath)
+    {
+        WriteResult(result.AnalysisResult);
+        Console.WriteLine("Database save completed.");
+        Console.WriteLine($"Database:   {databasePath}");
+        Console.WriteLine($"Corpus Id:  {result.Corpus.Id}");
+        Console.WriteLine($"Book Id:    {result.Book.Id}");
+        Console.WriteLine($"Run Id:     {result.AnalysisRun.Id}");
+    }
+
     private static void WriteHelp()
     {
         Console.WriteLine("CorpusLens");
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine("  demo [--out <dir>]");
+        Console.WriteLine("  corpus create <name> [--language <code>] [--description <text>] [--db <file>]");
+        Console.WriteLine("  corpus list [--db <file>]");
         Console.WriteLine("  analyze-text <file> [--language <code>] [--title <title>] [--out <dir>]");
-        Console.WriteLine("  analyze-epub <file.epub> [--language <code>] [--out <dir>]");
+        Console.WriteLine("  analyze-epub <file.epub> [--language <code>] [--out <dir>] [--corpus <name>] [--db <file>]");
         Console.WriteLine();
+        WriteCorpusHelp();
         WriteAnalyzeTextHelp();
         WriteAnalyzeEpubHelp();
+    }
+
+    private static void WriteCorpusHelp()
+    {
+        Console.WriteLine("Corpus examples:");
+        Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- corpus create \"English Kids\" --language en");
+        Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- corpus list");
+        Console.WriteLine();
     }
 
     private static void WriteAnalyzeTextHelp()
@@ -188,6 +321,7 @@ public static class Program
     {
         Console.WriteLine("EPUB examples:");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- analyze-epub ./samples/epubs/alice.epub --language en --out ./artifacts/alice");
+        Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- analyze-epub ./samples/epubs/alice.epub --language en --corpus \"English Kids\" --out ./artifacts/alice");
         Console.WriteLine();
     }
 
