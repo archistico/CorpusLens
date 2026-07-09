@@ -27,7 +27,8 @@ CorpusLens dispone già di una base funzionante per:
 * stopword profile iniziali;
 * distinzione tra parole contenuto e parole funzione;
 * dettaglio parola;
-* KWIC base.
+* KWIC base;
+* gestione EPUB corrotti durante l'analisi cartella tramite skip e `import_failures.csv`.
 
 Le ultime milestone prodotte devono ancora essere consolidate localmente:
 
@@ -35,6 +36,7 @@ Le ultime milestone prodotte devono ancora essere consolidate localmente:
 Milestone 5   — Stopword profiles
 Milestone 5.1 — Word detail
 Milestone 5.2 — KWIC contexts
+Milestone 5.4 — Invalid EPUB handling
 ```
 
 La priorità immediata è quindi verificare e stabilizzare queste funzioni prima di introdurre nuove feature strutturali.

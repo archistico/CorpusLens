@@ -67,7 +67,7 @@ Generated files:
 La prima importazione EPUB è disponibile tramite CLI:
 
 ```powershell
-dotnet run --project src/CorpusLens.Cli -- analyze-epub ./books/alice.epub --language en --out ./artifacts/alice
+dotnet run --project src/CorpusLens.Cli -- analyze-epub ./books/en/alice.epub --language en --out ./artifacts/alice
 ```
 
 Output generati:
@@ -145,6 +145,65 @@ dotnet run --project src/CorpusLens.Cli -- stats next 1 --word alice --limit 25
 dotnet run --project src/CorpusLens.Cli -- stats categories 1
 ```
 
+
+## Language-specific book folders
+
+The recommended local structure is now language-based:
+
+```text
+books/
+├── en/
+└── it/
+```
+
+Use `books/en` for English EPUB files and `books/it` for Italian EPUB files. This avoids accidentally mixing languages in the same corpus analysis.
+
+Create the folders from PowerShell with:
+
+```powershell
+make setup-books
+```
+
+Typical English workflow:
+
+```powershell
+make check
+make corpus-create-en
+make analyze-en
+make stats-runs LIMIT=10
+make stats-summary RUN=1
+make stats-content RUN=1 LIMIT=30
+```
+
+Typical Italian workflow:
+
+```powershell
+make check
+make corpus-create-it
+make analyze-it
+make stats-runs LIMIT=10
+make stats-summary RUN=1
+make stats-content RUN=1 LIMIT=30
+make stats-function RUN=1 LIMIT=30
+```
+
+If both corpora are needed in the same database, do not run `make check` between the two analyses because `make check` removes `./data`. Instead use:
+
+```powershell
+make clean
+make corpus-create-en
+make corpus-create-it
+make analyze-en
+make analyze-it
+make stats-runs LIMIT=10
+```
+
+The generic targets still work and can be overridden explicitly:
+
+```powershell
+make analyze-books BOOKS=./books/it LANG=it CORPUS="Italian Literature" OUT=./artifacts/it
+```
+
 ## Milestone 4 — Makefile and folder analysis
 
 This version adds a root `Makefile` with the most common development and analysis commands.
@@ -155,32 +214,58 @@ This version adds a root `Makefile` with the most common development and analysi
 make check
 make clean-data
 make clean
-make corpus-create CORPUS="English Literature" LANG=en
+make corpus-create-en
+make corpus-create-it
 make corpus-list
-make analyze-book BOOK=./books/alice.epub OUT=./artifacts/alice CORPUS="English Literature"
-make analyze-books BOOKS=./books OUT=./artifacts/books CORPUS="English Literature"
+make analyze-book BOOK=./books/en/alice.epub OUT=./artifacts/alice CORPUS="English Literature" LANG=en
+make analyze-en
+make analyze-it
 make stats-words RUN=1 LIMIT=25
 ```
 
 CorpusLens can also analyze all EPUB files in a folder as a single aggregate corpus run:
 
 ```powershell
-dotnet run --project src/CorpusLens.Cli -- analyze-epub-folder ./books --language en --out ./artifacts/books
+dotnet run --project src/CorpusLens.Cli -- analyze-epub-folder ./books/en --language en --out ./artifacts/en
 ```
 
 To save the aggregate run in SQLite:
 
 ```powershell
-dotnet run --project src/CorpusLens.Cli -- analyze-epub-folder ./books --language en --corpus "English Literature" --out ./artifacts/books
+dotnet run --project src/CorpusLens.Cli -- analyze-epub-folder ./books/en --language en --corpus "English Literature" --out ./artifacts/en
 ```
 
 Recursive folder scan:
 
 ```powershell
-dotnet run --project src/CorpusLens.Cli -- analyze-epub-folder ./books --language en --recursive --out ./artifacts/books
+dotnet run --project src/CorpusLens.Cli -- analyze-epub-folder ./books/en --language en --recursive --out ./artifacts/en
 ```
 
 The aggregate analysis treats each EPUB as a separate document, so `DocumentCount` in word and n-gram statistics represents the number of books in which the item appears.
+
+### Corrupt or invalid EPUB files
+
+When analyzing a folder, CorpusLens now skips EPUB files that cannot be read and continues with the valid files. This is useful for mixed folders downloaded from public-domain sources, where one file may be damaged or may not be a real EPUB.
+
+The console output shows the number of skipped files and lists their names. The output folder also contains:
+
+```text
+import_failures.csv
+```
+
+Example:
+
+```powershell
+make analyze-it
+```
+
+If one Italian EPUB is corrupt, the command still analyzes the readable EPUB files and writes the failure details to:
+
+```text
+artifacts/it/import_failures.csv
+```
+
+If all EPUB files fail, the command stops with an error because there is no valid corpus to analyze.
 
 ### Makefile on Windows
 
@@ -238,3 +323,7 @@ dotnet run --project src/CorpusLens.Cli -- stats kwic 1 alice --limit 10 --conte
 ```
 
 These commands do not recompute the analysis. They read the already persisted statistics and clean chapter text from SQLite.
+
+## Italian EPUB cleanup note
+
+Italian EPUBs from Liber Liber / Progetto Manuzio may contain front matter such as metadata, license text, donation notes and table of contents pages. CorpusLens includes a first cleanup pass for common Liber Liber markers. If `make analyze-it` produces `artifacts/it/import_failures.csv`, inspect that file: invalid EPUBs are skipped so the valid books can still be analyzed.

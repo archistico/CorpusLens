@@ -124,4 +124,68 @@ public sealed class EpubBoilerplateCleanerTests
 
         Assert.False(cleaner.IsLikelyFrontMatterOnly(text));
     }
+
+    [Fact]
+    public void Clean_ShouldRemoveLiberLiberLeadingMatterAndKeepFirstChapter()
+    {
+        const string text = """
+            Alice nel paese delle meraviglie, di Lewis Carroll
+            Copertina
+
+            Informazioni
+            QUESTO E-BOOK:
+            TITOLO: Alice nel paese delle meraviglie
+            AUTORE: Carroll, Lewis
+            LICENZA: questo testo è distribuito con licenza Liber Liber.
+
+            Liber Liber
+            Se questo libro ti è piaciuto, aiutaci a realizzarne altri.
+
+            Indice
+            Copertina
+            Colophon
+            Liber Liber
+            Indice (questa pagina)
+            I – NELLA CONIGLIERA
+            II – LO STAGNO DI LAGRIME
+
+            ALICE NEL PAESE DELLE MERAVIGLIE
+            di Lewis Carroll
+
+            I
+            NELLA CONIGLIERA
+            Alice cominciava a sentirsi assai stanca di starsene seduta.
+            """;
+
+        EpubBoilerplateCleaner cleaner = new();
+
+        string cleaned = cleaner.Clean(text);
+
+        Assert.StartsWith("I", cleaned, StringComparison.Ordinal);
+        Assert.Contains("NELLA CONIGLIERA", cleaned, StringComparison.Ordinal);
+        Assert.Contains("Alice cominciava", cleaned, StringComparison.Ordinal);
+        Assert.DoesNotContain("QUESTO E-BOOK", cleaned, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Liber Liber", cleaned, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("LICENZA", cleaned, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void IsLikelyFrontMatterOnly_ShouldDetectItalianLiberLiberTocOnly()
+    {
+        const string text = """
+            Alice nel paese delle meraviglie
+            Informazioni
+            QUESTO E-BOOK:
+            TITOLO: Alice nel paese delle meraviglie
+            LICENZA: Liber Liber
+            Indice
+            I – NELLA CONIGLIERA
+            II – LO STAGNO DI LAGRIME
+            III – CORSA SCOMPIGLIATA
+            """;
+
+        EpubBoilerplateCleaner cleaner = new();
+
+        Assert.True(cleaner.IsLikelyFrontMatterOnly(text));
+    }
 }

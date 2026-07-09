@@ -25,15 +25,17 @@ public static class StopWordProvider
             ["it"] = new HashSet<string>(StringComparer.Ordinal)
             {
                 "a", "ad", "al", "allo", "ai", "agli", "all", "agl", "alla", "alle", "anche", "avere", "aveva", "avevano",
-                "ben", "che", "chi", "ci", "cio", "cioè", "come", "con", "contro", "cui", "da", "dal", "dallo", "dai", "dagli",
+                "avevo", "avessi", "avesse", "avessero", "avete", "avevi", "avevamo", "avreste", "avrebbe", "avrebbero",
+                "ben", "che", "chi", "ci", "cio", "cioè", "ciò", "come", "con", "contro", "cui", "da", "dal", "dallo", "dai", "dagli",
                 "dall", "dagl", "dalla", "dalle", "de", "del", "dello", "dei", "degli", "dell", "degl", "della", "delle", "di",
-                "dove", "e", "ed", "era", "erano", "essere", "fa", "fra", "gli", "ha", "hai", "hanno", "ho", "il", "in",
-                "io", "la", "le", "lei", "li", "lo", "loro", "lui", "ma", "mi", "mia", "mie", "miei", "mio", "ne", "negli",
-                "nel", "nella", "nelle", "nello", "no", "noi", "non", "o", "per", "perché", "più", "quale", "quali", "quando",
-                "quanta", "quante", "quanti", "quanto", "quella", "quelle", "quelli", "quello", "questa", "queste", "questi", "questo",
-                "se", "sei", "si", "sia", "siamo", "siete", "sono", "sta", "su", "sua", "sue", "sugli", "sul", "sulla",
+                "dove", "e", "ed", "è", "era", "erano", "eravamo", "eravate", "eri", "ero", "essere", "fa", "fra", "fui", "fu", "fummo",
+                "furono", "foste", "fosti", "gli", "ha", "hai", "hanno", "ho", "i", "il", "in",
+                "io", "la", "le", "lei", "li", "lo", "loro", "lui", "ma", "me", "mi", "mia", "mie", "miei", "mio", "ne", "negli",
+                "nel", "nella", "nelle", "nello", "no", "noi", "non", "o", "per", "perché", "più", "qual", "quale", "quali", "quando",
+                "quanta", "quante", "quanti", "quanto", "quel", "quei", "quegli", "quella", "quelle", "quelli", "quello", "questa", "queste", "questi", "questo",
+                "se", "sei", "si", "sia", "siamo", "siano", "siate", "siete", "sono", "sta", "stava", "stavano", "sto", "su", "sua", "sue", "sugli", "sul", "sulla",
                 "sulle", "sullo", "suo", "suoi", "ti", "tra", "tu", "tua", "tue", "tuo", "tuoi", "tutti", "un", "una",
-                "uno", "vi", "voi"
+                "uno", "vi", "voi", "egli", "ella", "esse", "essi", "esso", "essa", "l", "d", "c"
             },
             ["fr"] = new HashSet<string>(StringComparer.Ordinal)
             {

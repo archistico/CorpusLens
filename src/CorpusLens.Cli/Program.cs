@@ -3,6 +3,7 @@ using CorpusLens.Application.EpubAnalysis;
 using CorpusLens.Application.Storage;
 using CorpusLens.Application.TextAnalysis;
 using CorpusLens.Domain.Analysis;
+using CorpusLens.Domain.Books;
 using CorpusLens.Domain.Storage;
 using CorpusLens.Infrastructure.Storage;
 
@@ -648,6 +649,7 @@ public static class Program
     {
         Console.WriteLine("CorpusLens EPUB folder analysis completed.");
         Console.WriteLine($"Books:      {result.SourceBooks.Count}");
+        Console.WriteLine($"Skipped:    {result.Failures.Count}");
         Console.WriteLine($"Chapters:   {result.Book.Chapters.Count}");
         Console.WriteLine($"Documents:  {result.Analysis.Summary.DocumentCount}");
         Console.WriteLine($"Text:       {result.ExtractedTextPath}");
@@ -655,6 +657,17 @@ public static class Program
         Console.WriteLine($"Words CSV:  {result.WordsCsvPath}");
         Console.WriteLine($"NGrams CSV: {result.NGramsCsvPath}");
         Console.WriteLine($"Next CSV:   {result.NextWordsCsvPath}");
+        Console.WriteLine($"Failures:   {result.ImportFailuresCsvPath}");
+
+        if (result.Failures.Count > 0)
+        {
+            Console.WriteLine();
+            Console.WriteLine("Skipped EPUB files:");
+            foreach (EpubImportFailure failure in result.Failures)
+            {
+                Console.WriteLine($"- {failure.FileName}: {failure.ErrorMessage}");
+            }
+        }
     }
 
     private static void WriteResult(AnalyzeEpubFolderAndSaveResult result, string databasePath)

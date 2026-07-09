@@ -12,3 +12,7 @@ reports/
 *.db
 *.db-shm
 *.db-wal
+
+# Local EPUB corpora
+books/**/*.epub
+!books/**/.gitkeep
