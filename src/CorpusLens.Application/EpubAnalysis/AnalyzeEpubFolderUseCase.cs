@@ -15,9 +15,10 @@ public sealed class AnalyzeEpubFolderUseCase
     private readonly CorpusAnalyzer _analyzer;
     private readonly MarkdownReportWriter _markdownReportWriter;
     private readonly CsvReportWriter _csvReportWriter;
+    private readonly ImportDiagnosticsWriter _importDiagnosticsWriter;
 
     public AnalyzeEpubFolderUseCase()
-        : this(new EpubBookReader(), new CorpusAnalyzer(), new MarkdownReportWriter(), new CsvReportWriter())
+        : this(new EpubBookReader(), new CorpusAnalyzer(), new MarkdownReportWriter(), new CsvReportWriter(), new ImportDiagnosticsWriter())
     {
     }
 
@@ -25,12 +26,14 @@ public sealed class AnalyzeEpubFolderUseCase
         EpubBookReader bookReader,
         CorpusAnalyzer analyzer,
         MarkdownReportWriter markdownReportWriter,
-        CsvReportWriter csvReportWriter)
+        CsvReportWriter csvReportWriter,
+        ImportDiagnosticsWriter importDiagnosticsWriter)
     {
         _bookReader = bookReader;
         _analyzer = analyzer;
         _markdownReportWriter = markdownReportWriter;
         _csvReportWriter = csvReportWriter;
+        _importDiagnosticsWriter = importDiagnosticsWriter;
     }
 
     public async Task<AnalyzeEpubFolderResult> ExecuteAsync(
@@ -114,6 +117,11 @@ public sealed class AnalyzeEpubFolderUseCase
         string importFailuresCsvPath = Path.Combine(request.OutputDirectory, "import_failures.csv");
         await WriteImportFailuresAsync(failures, importFailuresCsvPath, cancellationToken).ConfigureAwait(false);
 
+        string importDiagnosticsPath = Path.Combine(request.OutputDirectory, "import_diagnostics.md");
+        await _importDiagnosticsWriter
+            .WriteAsync(books, failures, importDiagnosticsPath, cancellationToken)
+            .ConfigureAwait(false);
+
         return new AnalyzeEpubFolderResult(
             aggregateBook,
             books,
@@ -124,7 +132,8 @@ public sealed class AnalyzeEpubFolderUseCase
             Path.Combine(request.OutputDirectory, "ngrams.csv"),
             Path.Combine(request.OutputDirectory, "next_words.csv"),
             extractedTextPath,
-            importFailuresCsvPath);
+            importFailuresCsvPath,
+            importDiagnosticsPath);
     }
 
     private static ImportedBook BuildAggregateBook(string folderPath, string languageCode, IReadOnlyList<ImportedBook> books)

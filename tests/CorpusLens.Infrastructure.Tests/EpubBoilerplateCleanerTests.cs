@@ -188,4 +188,62 @@ public sealed class EpubBoilerplateCleanerTests
 
         Assert.True(cleaner.IsLikelyFrontMatterOnly(text));
     }
+
+    [Fact]
+    public void IsLikelyFrontMatterOnly_ShouldDetectItalianLiberLiberMetadataChapter()
+    {
+        const string text = """
+            Alice nel paese delle meraviglie
+            Informazioni
+            QUESTO E-BOOK:
+            TITOLO: Alice nel paese delle meraviglie
+            AUTORE: Carroll, Lewis
+            LICENZA: questo testo è distribuito con licenza Liber Liber.
+            http://www.liberliber.it
+            Se questo libro ti è piaciuto, aiutaci a realizzarne altri.
+            Fai una donazione.
+            """;
+
+        EpubBoilerplateCleaner cleaner = new();
+
+        Assert.True(cleaner.IsLikelyFrontMatterOnly(text));
+    }
+
+    [Fact]
+    public void IsLikelyFrontMatterOnly_ShouldNotDetectNarrativeChapterMentioningIndice()
+    {
+        const string text = """
+            Il giudice trovò l'indice della mano sulla pagina.
+            Era una prova strana, ma nessuno nella stanza osava parlare.
+            Dopo qualche minuto, il vecchio si alzò e disse che avrebbe raccontato tutto.
+            """;
+
+        EpubBoilerplateCleaner cleaner = new();
+
+        Assert.False(cleaner.IsLikelyFrontMatterOnly(text));
+    }
+
+    [Fact]
+    public void IsLikelyFrontMatterOnly_ShouldDetectLongerItalianEbookMetadataChapter()
+    {
+        const string text = """
+            Informazioni
+            QUESTO E-BOOK:
+            TITOLO: Alla conquista della Luna
+            AUTORE: Emilio Salgari
+            TRADUTTORE:
+            CURATORE:
+            LICENZA: questo testo è distribuito con licenza Liber Liber.
+            http://www.liberliber.it
+            Se questo libro ti è piaciuto, aiutaci a realizzarne altri.
+            Fai una donazione.
+            Puoi sostenere il progetto e contribuire alla diffusione gratuita della cultura.
+            Questa pagina contiene informazioni editoriali e tecniche sul file digitale.
+            """;
+
+        EpubBoilerplateCleaner cleaner = new();
+
+        Assert.True(cleaner.IsLikelyFrontMatterOnly(text));
+    }
+
 }

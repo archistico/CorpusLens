@@ -112,6 +112,10 @@ Le stopword non devono mai essere eliminate dai dati. Devono solo essere classif
 
 ## Milestone 6 — Import diagnostics
 
+### Stato
+
+IMPLEMENTATA nella milestone 6.
+
 ### Obiettivo
 
 Aggiungere un report diagnostico per valutare la qualità dell’import EPUB e individuare eventuali residui non linguistici nei dati.
@@ -1161,3 +1165,13 @@ CorpusLens deve evolvere in questo ordine:
 ```
 
 La UI deve arrivare solo dopo che il motore produce dati affidabili, interrogabili e linguisticamente sensati.
+
+---
+
+## Nota operativa — Milestone 6.2
+
+Dopo il primo giro di diagnostica sul corpus italiano, la pulizia metadata è stata raffinata ulteriormente:
+
+- capitoli metadata-only italiani con `QUESTO E-BOOK`, `LICENZA`, `Liber Liber`, URL e donazioni vengono riconosciuti meglio;
+- i capitoli lunghi reali non vengono più segnalati come sospetti solo perché contengono parole deboli come `indice`, `sommario`, `prefazione` o `editore`;
+- i conteggi dei termini sospetti restano comunque visibili nel report diagnostico.

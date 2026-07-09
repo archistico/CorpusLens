@@ -6,6 +6,7 @@ using CorpusLens.Domain.Analysis;
 using CorpusLens.Domain.Books;
 using CorpusLens.Domain.Storage;
 using CorpusLens.Infrastructure.Storage;
+using CorpusLens.Infrastructure.Reports;
 
 namespace CorpusLens.Cli;
 
@@ -39,6 +40,7 @@ public static class Program
                 "demo" => await RunDemoAsync(commandArgs).ConfigureAwait(false),
                 "corpus" => await RunCorpusAsync(commandArgs).ConfigureAwait(false),
                 "stats" => await RunStatsAsync(commandArgs).ConfigureAwait(false),
+                "inspect" => await RunInspectAsync(commandArgs).ConfigureAwait(false),
                 "analyze-text" => await AnalyzeTextFileAsync(commandArgs).ConfigureAwait(false),
                 "analyze-epub" => await AnalyzeEpubAsync(commandArgs).ConfigureAwait(false),
                 "analyze-epub-folder" => await AnalyzeEpubFolderAsync(commandArgs).ConfigureAwait(false),
@@ -154,6 +156,71 @@ public static class Program
         Console.Error.WriteLine($"Unknown corpus command: {command}");
         Console.Error.WriteLine();
         WriteCorpusHelp();
+        return 1;
+    }
+
+
+    private static async Task<int> RunInspectAsync(string[] args)
+    {
+        if (args.Length == 0)
+        {
+            WriteInspectHelp();
+            return 1;
+        }
+
+        string subCommand = args[0];
+        string[] subCommandArgs = args.Skip(1).ToArray();
+
+        return subCommand switch
+        {
+            "run" => await InspectRunAsync(subCommandArgs).ConfigureAwait(false),
+            _ => UnknownInspectCommand(subCommand)
+        };
+    }
+
+    private static async Task<int> InspectRunAsync(string[] args)
+    {
+        if (!TryReadRunId(args, out long analysisRunId))
+        {
+            WriteInspectHelp();
+            return 1;
+        }
+
+        CommandLineOptions options = CommandLineOptions.Parse(args.Skip(1).ToArray());
+        string databasePath = options.Get("db", DefaultDatabasePath());
+        string outputPath = options.Get("out", $"./artifacts/run-{analysisRunId.ToString(CultureInfo.InvariantCulture)}-diagnostics/import_diagnostics.md");
+
+        SqliteCorpusStore store = new(databasePath);
+        StoredAnalysisRunSummary? run = await store
+            .GetAnalysisRunSummaryAsync(analysisRunId)
+            .ConfigureAwait(false);
+
+        if (run is null)
+        {
+            Console.Error.WriteLine($"Analysis run {analysisRunId} was not found.");
+            return 1;
+        }
+
+        IReadOnlyList<StoredChapter> chapters = await store
+            .ListChaptersAsync(run.BookId)
+            .ConfigureAwait(false);
+
+        ImportDiagnosticsWriter writer = new();
+        await writer.WriteAsync(run, chapters, outputPath).ConfigureAwait(false);
+
+        Console.WriteLine("Import diagnostics generated.");
+        Console.WriteLine($"Run Id:      {run.Id}");
+        Console.WriteLine($"Book/Source: {run.BookTitle}");
+        Console.WriteLine($"Chapters:    {chapters.Count}");
+        Console.WriteLine($"Output:      {outputPath}");
+        return 0;
+    }
+
+    private static int UnknownInspectCommand(string command)
+    {
+        Console.Error.WriteLine($"Unknown inspect command: {command}");
+        Console.Error.WriteLine();
+        WriteInspectHelp();
         return 1;
     }
 
@@ -466,7 +533,8 @@ public static class Program
         {
             Console.Error.WriteLine("Missing text file path.");
             Console.Error.WriteLine();
-            WriteAnalyzeTextHelp();
+            WriteInspectHelp();
+        WriteAnalyzeTextHelp();
             return 1;
         }
 
@@ -658,6 +726,7 @@ public static class Program
         Console.WriteLine($"NGrams CSV: {result.NGramsCsvPath}");
         Console.WriteLine($"Next CSV:   {result.NextWordsCsvPath}");
         Console.WriteLine($"Failures:   {result.ImportFailuresCsvPath}");
+        Console.WriteLine($"Diagnostics: {result.ImportDiagnosticsPath}");
 
         if (result.Failures.Count > 0)
         {
@@ -696,12 +765,14 @@ public static class Program
         Console.WriteLine("  stats ngrams <runId> [--n <n>] [--limit <n>] [--db <file>]");
         Console.WriteLine("  stats next <runId> [--word <word>] [--limit <n>] [--db <file>]");
         Console.WriteLine("  stats categories <runId> [--db <file>]");
+        Console.WriteLine("  inspect run <runId> [--out <file>] [--db <file>]");
         Console.WriteLine("  analyze-text <file> [--language <code>] [--title <title>] [--out <dir>]");
         Console.WriteLine("  analyze-epub <file.epub> [--language <code>] [--out <dir>] [--corpus <name>] [--db <file>]");
         Console.WriteLine("  analyze-epub-folder <dir> [--language <code>] [--out <dir>] [--corpus <name>] [--db <file>] [--recursive]");
         Console.WriteLine();
         WriteCorpusHelp();
         WriteStatsHelp();
+        WriteInspectHelp();
         WriteAnalyzeTextHelp();
         WriteAnalyzeEpubHelp();
         WriteAnalyzeEpubFolderHelp();
@@ -728,6 +799,15 @@ public static class Program
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats ngrams 1 --n 3 --limit 25");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats next 1 --word alice --limit 25");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats categories 1");
+        Console.WriteLine();
+    }
+
+
+    private static void WriteInspectHelp()
+    {
+        Console.WriteLine("Inspect examples:");
+        Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- inspect run 1 --db ./data/corpuslens.db");
+        Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- inspect run 1 --out ./artifacts/diagnostics/import_diagnostics.md --db ./data/corpuslens.db");
         Console.WriteLine();
     }
 

@@ -67,6 +67,11 @@ public sealed class EpubBoilerplateCleaner
         int chapterMarkerCount = lines.Count(line => ChapterMarkerLineRegex.IsMatch(line));
         int longProseLineCount = lines.Count(line => CountWords(line) >= 12);
 
+        if (hasLiberLiberMetadata && LooksLikeLiberLiberMetadataOnly(lines, longProseLineCount))
+        {
+            return true;
+        }
+
         return chapterMarkerCount >= 3 && longProseLineCount == 0;
     }
 
@@ -176,6 +181,72 @@ public sealed class EpubBoilerplateCleaner
             || joined.Contains("indice di affidabilità", StringComparison.Ordinal);
     }
 
+    private static bool LooksLikeLiberLiberMetadataOnly(IReadOnlyList<string> lines, int longProseLineCount)
+    {
+        string joined = string.Join('\n', lines.Take(120)).ToLowerInvariant();
+        int markerCount = 0;
+
+        string[] markers =
+        {
+            "questo e-book",
+            "e-book",
+            "ebook",
+            "licenza",
+            "distribuito con licenza",
+            "liber liber",
+            "liberliber",
+            "http://",
+            "https://",
+            "www.",
+            "informazioni",
+            "copertina",
+            "colophon",
+            "indice di affidabilità",
+            "migliaia di ebook",
+            "fai una donazione"
+        };
+
+        foreach (string marker in markers)
+        {
+            if (joined.Contains(marker, StringComparison.Ordinal))
+            {
+                markerCount++;
+            }
+        }
+
+        int totalWords = lines.Sum(CountWords);
+        int metadataLineCount = lines.Count(IsLikelyMetadataLine);
+        int tocLineCount = lines.Count(line => IsLikelyTocLine(line.ToLowerInvariant()));
+
+        if (markerCount >= 2 && totalWords <= 450 && longProseLineCount <= 2)
+        {
+            return true;
+        }
+
+        if (markerCount >= 3 && metadataLineCount + tocLineCount >= 4 && longProseLineCount <= 4)
+        {
+            return true;
+        }
+
+        if (markerCount >= 4
+            && totalWords <= 1_200
+            && metadataLineCount >= 2
+            && longProseLineCount <= 5)
+        {
+            return true;
+        }
+
+        if (joined.Contains("questo e-book", StringComparison.Ordinal)
+            && joined.Contains("licenza", StringComparison.Ordinal)
+            && totalWords <= 1_200
+            && longProseLineCount <= 5)
+        {
+            return true;
+        }
+
+        return false;
+    }
+
     private static int FindLastLeadingLiberLiberMetadataLine(IReadOnlyList<LineInfo> lines)
     {
         int last = -1;
@@ -191,6 +262,8 @@ public sealed class EpubBoilerplateCleaner
 
             if (normalized is "informazioni" or "copertina" or "colophon" or "liber liber" or "indice"
                 || normalized.StartsWith("questo e-book", StringComparison.Ordinal)
+                || normalized.StartsWith("questo e-book", StringComparison.Ordinal)
+                || normalized.StartsWith("e-book", StringComparison.Ordinal)
                 || normalized.StartsWith("titolo:", StringComparison.Ordinal)
                 || normalized.StartsWith("autore:", StringComparison.Ordinal)
                 || normalized.StartsWith("traduttore:", StringComparison.Ordinal)
@@ -206,6 +279,10 @@ public sealed class EpubBoilerplateCleaner
                 || normalized.StartsWith("revisione:", StringComparison.Ordinal)
                 || normalized.StartsWith("impaginazione:", StringComparison.Ordinal)
                 || normalized.StartsWith("pubblicazione:", StringComparison.Ordinal)
+                || normalized.StartsWith("edizione:", StringComparison.Ordinal)
+                || normalized.StartsWith("collana:", StringComparison.Ordinal)
+                || normalized.Contains("distribuito con licenza", StringComparison.Ordinal)
+                || normalized.Contains("liber liber", StringComparison.Ordinal)
                 || normalized.Contains("liberliber", StringComparison.Ordinal)
                 || normalized.Contains("fai una donazione", StringComparison.Ordinal)
                 || normalized.Contains("migliaia di ebook", StringComparison.Ordinal)
@@ -280,12 +357,18 @@ public sealed class EpubBoilerplateCleaner
     private static bool IsLikelyMetadataLine(string line)
     {
         string normalized = line.Trim().ToLowerInvariant();
-        return normalized.StartsWith("titolo:", StringComparison.Ordinal)
+        return normalized.StartsWith("questo e-book", StringComparison.Ordinal)
+            || normalized.StartsWith("e-book", StringComparison.Ordinal)
+            || normalized.StartsWith("titolo:", StringComparison.Ordinal)
             || normalized.StartsWith("autore:", StringComparison.Ordinal)
             || normalized.StartsWith("traduttore:", StringComparison.Ordinal)
             || normalized.StartsWith("curatore:", StringComparison.Ordinal)
             || normalized.StartsWith("licenza:", StringComparison.Ordinal)
             || normalized.StartsWith("codice isbn", StringComparison.Ordinal)
+            || normalized.StartsWith("edizione:", StringComparison.Ordinal)
+            || normalized.StartsWith("collana:", StringComparison.Ordinal)
+            || normalized.Contains("distribuito con licenza", StringComparison.Ordinal)
+            || normalized.Contains("liber liber", StringComparison.Ordinal)
             || normalized.Contains("liberliber", StringComparison.Ordinal)
             || normalized.Contains("http://", StringComparison.Ordinal)
             || normalized.Contains("https://", StringComparison.Ordinal)

@@ -13,4 +13,5 @@ public sealed record AnalyzeEpubFolderResult(
     string NGramsCsvPath,
     string NextWordsCsvPath,
     string ExtractedTextPath,
-    string ImportFailuresCsvPath);
+    string ImportFailuresCsvPath,
+    string ImportDiagnosticsPath);

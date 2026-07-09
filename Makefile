@@ -11,6 +11,7 @@
 #   make stats-function RUN=1 LIMIT=25
 #   make stats-word RUN=1 WORD=alice LIMIT=25
 #   make stats-kwic RUN=1 WORD=alice LIMIT=10 CONTEXT=8
+#   make inspect-run RUN=1
 
 DOTNET ?= dotnet
 PROJECT ?= src/CorpusLens.Cli
@@ -32,8 +33,9 @@ LIMIT ?= 25
 WORD ?= alice
 N ?= 3
 CONTEXT ?= 8
+DIAGNOSTICS_OUT ?= ./artifacts/diagnostics/import_diagnostics.md
 
-.PHONY: restore build test check demo clean clean-data clean-artifacts setup-books corpus-create corpus-create-en corpus-create-it corpus-list analyze-text analyze-book analyze-books analyze-books-recursive analyze-en analyze-it analyze-en-recursive analyze-it-recursive stats-runs stats-summary stats-words stats-content stats-function stats-word stats-kwic stats-ngrams stats-trigrams stats-next stats-categories
+.PHONY: restore build test check demo clean clean-data clean-artifacts setup-books corpus-create corpus-create-en corpus-create-it corpus-list analyze-text analyze-book analyze-books analyze-books-recursive analyze-en analyze-it analyze-en-recursive analyze-it-recursive stats-runs stats-summary stats-words stats-content stats-function stats-word stats-kwic stats-ngrams stats-trigrams stats-next stats-categories inspect-run
 
 restore:
 	$(DOTNET) restore
@@ -129,3 +131,6 @@ stats-next:
 
 stats-categories:
 	$(DOTNET) run --project $(PROJECT) -- stats categories $(RUN) --db $(DB)
+
+inspect-run:
+	$(DOTNET) run --project $(PROJECT) -- inspect run $(RUN) --out $(DIAGNOSTICS_OUT) --db $(DB)

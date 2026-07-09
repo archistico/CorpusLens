@@ -313,6 +313,7 @@ After saving an analysis run to SQLite, inspect one word with its main statistic
 ```powershell
 make stats-word RUN=1 WORD=alice LIMIT=25
 make stats-kwic RUN=1 WORD=alice LIMIT=10 CONTEXT=8
+make inspect-run RUN=1
 ```
 
 Equivalent CLI command:
@@ -327,3 +328,20 @@ These commands do not recompute the analysis. They read the already persisted st
 ## Italian EPUB cleanup note
 
 Italian EPUBs from Liber Liber / Progetto Manuzio may contain front matter such as metadata, license text, donation notes and table of contents pages. CorpusLens includes a first cleanup pass for common Liber Liber markers. If `make analyze-it` produces `artifacts/it/import_failures.csv`, inspect that file: invalid EPUBs are skipped so the valid books can still be analyzed.
+
+
+## Import diagnostics
+
+Durante l'analisi di una cartella EPUB CorpusLens genera anche:
+
+```text
+import_diagnostics.md
+```
+
+Il file segnala import falliti, capitoli sospetti, capitoli molto corti/lunghi e possibili residui di boilerplate come Gutenberg, Liber Liber, licenze, indici e copyright.
+
+Puoi rigenerare la diagnostica da una run salvata:
+
+```powershell
+make inspect-run RUN=1
+```
