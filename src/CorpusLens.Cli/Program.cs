@@ -383,20 +383,21 @@ public static class Program
             .ConfigureAwait(false);
         int sourceBookCount = sourceBooks.Count > 0 ? sourceBooks.Count : 1;
 
+        int totalCount = allMatchingBooks.Sum(book => book.Count);
+        double coverage = sourceBookCount == 0 ? 0 : allMatchingBooks.Count / (double)sourceBookCount;
+
         Console.WriteLine($"Word distribution for '{wordText}' in run {analysisRunId}");
+        Console.WriteLine($"Source books:  {sourceBookCount}");
+        Console.WriteLine($"Matched books: {allMatchingBooks.Count} of {sourceBookCount}");
+        Console.WriteLine($"Coverage:      {FormatProbability(coverage)}");
+        Console.WriteLine($"Total count:   {totalCount}");
+        Console.WriteLine($"Shown books:   {books.Count} of {allMatchingBooks.Count}");
+
         if (allMatchingBooks.Count == 0)
         {
-            Console.WriteLine($"Source books:  {sourceBookCount}");
-            Console.WriteLine("Matched books: 0");
             Console.WriteLine("No matching source books found.");
             return 0;
         }
-
-        int totalCount = allMatchingBooks.Sum(book => book.Count);
-        Console.WriteLine($"Source books:  {sourceBookCount}");
-        Console.WriteLine($"Matched books: {allMatchingBooks.Count} ({FormatDouble(allMatchingBooks.Count * 100.0 / sourceBookCount)}%)");
-        Console.WriteLine($"Total count:   {totalCount}");
-        Console.WriteLine($"Shown books:   {books.Count}");
         Console.WriteLine();
         Console.WriteLine("#    Book                              Author                    Count  Per million  Word tokens");
         Console.WriteLine("---  --------------------------------  ------------------------  -----  -----------  -----------");

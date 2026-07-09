@@ -30,7 +30,7 @@ Columns:
 - `Per million`
 - `Word tokens`
 
-The command also prints a simple dispersion indicator: source book count, matched book count and matched-book coverage percentage.
+The command also prints simple dispersion indicators: source book count, matched book count, coverage percentage, total count and shown books.
 
 ## Notes
 

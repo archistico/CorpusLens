@@ -450,4 +450,4 @@ Equivalent raw command:
 dotnet run --project src/CorpusLens.Cli -- stats word-books 1 "whale" --limit 30 --db ./data/corpuslens.db
 ```
 
-This reads stored clean chapter text and shows only books where the word appears. Details: `docs/milestone-10-word-book-distribution.md`.
+This reads stored clean chapter text and shows only books where the word appears. The command always prints source books, matched books, coverage, total count and shown books. Details: `docs/milestone-10-word-book-distribution.md` and `docs/milestone-10-1-word-books-output-consistency.md`.

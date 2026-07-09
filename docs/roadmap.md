@@ -1207,3 +1207,7 @@ Aggiunto collegamento `AnalysisRunBook` tra run aggregate e libri EPUB reali. Nu
 ### Milestone 10 note
 
 Aggiunto comando `stats word-books <runId> <word>` / `make stats-word-books` per vedere la distribuzione di una parola sui libri reali collegati a una run aggregata. La query usa i capitoli puliti già salvati nel DB; il token index persistente resta previsto per una milestone successiva.
+
+### Milestone 10.1 note
+
+Uniformata l'intestazione del comando `stats word-books`: ora stampa sempre `Source books`, `Matched books`, `Coverage`, `Total count` e `Shown books`, anche quando la parola è presente in molti libri o non viene trovata.
