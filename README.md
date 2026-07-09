@@ -185,3 +185,24 @@ The aggregate analysis treats each EPUB as a separate document, so `DocumentCoun
 ### Makefile on Windows
 
 The Makefile is intended to be used from PowerShell on Windows. Cleanup targets use explicit PowerShell commands, so `make check` removes `./data` and `./artifacts` before restoring, building and testing.
+
+
+## Milestone 4.1 — Run navigation
+
+After saving multiple analyses in SQLite, you can list and inspect analysis runs directly from the CLI:
+
+```powershell
+make stats-runs LIMIT=10
+make stats-summary RUN=1
+```
+
+Equivalent raw commands:
+
+```powershell
+dotnet run --project src/CorpusLens.Cli -- stats runs --limit 10 --db ./data/corpuslens.db
+dotnet run --project src/CorpusLens.Cli -- stats summary 1 --db ./data/corpuslens.db
+```
+
+The stats CLI now formats decimal values with two decimals, so large frequency tables are easier to read.
+
+Details: `docs/milestone-4-1-run-navigation.md`.

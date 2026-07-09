@@ -175,6 +175,54 @@ public sealed class SqliteCorpusStoreTests
 
 
     [Fact]
+    public async Task ListAnalysisRunsAsync_ShouldReturnSavedRunWithCorpusAndBookTitle()
+    {
+        using TestDatabase database = new();
+        string sourceFile = database.CreateSourceFile("alice.epub", "fake epub content");
+        SqliteCorpusStore store = new(database.Path);
+        StoredCorpus corpus = await store.CreateCorpusAsync("English Literature", "en");
+
+        ImportedBook book = new(
+            "book-1",
+            "Alice",
+            "Lewis Carroll",
+            "en",
+            sourceFile,
+            new[] { new ImportedChapter(1, "Chapter I", "chapter1.xhtml", string.Empty, "Hello, Alice.") });
+
+        StoredBookImport storedImport = await store.SaveImportedBookAsync(corpus.Id, book);
+        CorpusAnalysisResult analysis = new(
+            new CorpusSummary(1, 2, 6, 4, 3, 2.0, 4.5),
+            Array.Empty<WordFrequency>(),
+            Array.Empty<NGramFrequency>(),
+            Array.Empty<NextWordFrequency>(),
+            Array.Empty<AnalyzedSentence>());
+
+        StoredAnalysisRun run = await store.SaveAnalysisRunAsync(
+            corpus.Id,
+            storedImport.Book.Id,
+            new AnalysisSettings(),
+            analysis,
+            "report.md",
+            "words.csv",
+            "ngrams.csv",
+            "next_words.csv",
+            "extracted_text.txt");
+
+        IReadOnlyList<StoredAnalysisRunSummary> runs = await store.ListAnalysisRunsAsync();
+        StoredAnalysisRunSummary summary = Assert.Single(runs);
+        StoredAnalysisRunSummary? found = await store.GetAnalysisRunSummaryAsync(run.Id);
+
+        Assert.Equal(run.Id, summary.Id);
+        Assert.Equal("English Literature", summary.CorpusName);
+        Assert.Equal("Alice", summary.BookTitle);
+        Assert.Equal(4, summary.WordTokenCount);
+        Assert.NotNull(found);
+        Assert.Equal(run.Id, found!.Id);
+    }
+
+
+    [Fact]
     public async Task SaveImportedBookAsync_ShouldPersistAggregateFolderBook()
     {
         using TestDatabase database = new();

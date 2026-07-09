@@ -169,12 +169,75 @@ public static class Program
 
         return subCommand switch
         {
+            "runs" => await PrintAnalysisRunsAsync(subCommandArgs).ConfigureAwait(false),
+            "summary" => await PrintAnalysisRunSummaryAsync(subCommandArgs).ConfigureAwait(false),
             "words" => await PrintTopWordsAsync(subCommandArgs).ConfigureAwait(false),
             "ngrams" => await PrintTopNGramsAsync(subCommandArgs).ConfigureAwait(false),
             "next" => await PrintTopNextWordsAsync(subCommandArgs).ConfigureAwait(false),
             "categories" => await PrintSentenceCategoriesAsync(subCommandArgs).ConfigureAwait(false),
             _ => UnknownStatsCommand(subCommand)
         };
+    }
+
+
+    private static async Task<int> PrintAnalysisRunsAsync(string[] args)
+    {
+        CommandLineOptions options = CommandLineOptions.Parse(args);
+        SqliteCorpusStore store = new(options.Get("db", DefaultDatabasePath()));
+        long? corpusId = TryReadLongOption(options, "corpus-id");
+        IReadOnlyList<StoredAnalysisRunSummary> runs = await store
+            .ListAnalysisRunsAsync(corpusId, ReadLimit(options))
+            .ConfigureAwait(false);
+
+        Console.WriteLine("Run  Corpus               Book/Source                       Started              Words      Sentences  Status");
+        Console.WriteLine("---  -------------------  --------------------------------  -------------------  ---------  ---------  ---------");
+        foreach (StoredAnalysisRunSummary run in runs)
+        {
+            Console.WriteLine($"{run.Id,3}  {TrimForColumn(run.CorpusName, 19),-19}  {TrimForColumn(run.BookTitle, 32),-32}  {FormatDateTime(run.StartedAt),-19}  {run.WordTokenCount,9}  {run.SentenceCount,9}  {run.Status}");
+        }
+
+        if (runs.Count == 0)
+        {
+            Console.WriteLine("No analysis runs found.");
+        }
+
+        return 0;
+    }
+
+    private static async Task<int> PrintAnalysisRunSummaryAsync(string[] args)
+    {
+        if (!TryReadRunId(args, out long analysisRunId))
+        {
+            WriteStatsHelp();
+            return 1;
+        }
+
+        CommandLineOptions options = CommandLineOptions.Parse(args.Skip(1).ToArray());
+        SqliteCorpusStore store = new(options.Get("db", DefaultDatabasePath()));
+        StoredAnalysisRunSummary? run = await store
+            .GetAnalysisRunSummaryAsync(analysisRunId)
+            .ConfigureAwait(false);
+
+        if (run is null)
+        {
+            Console.Error.WriteLine($"Analysis run {analysisRunId} was not found.");
+            return 1;
+        }
+
+        Console.WriteLine($"Run Id:                   {run.Id}");
+        Console.WriteLine($"Corpus:                   {run.CorpusName} ({run.CorpusId})");
+        Console.WriteLine($"Book/Source:              {run.BookTitle} ({run.BookId})");
+        Console.WriteLine($"Started:                  {FormatDateTime(run.StartedAt)}");
+        Console.WriteLine($"Completed:                {FormatDateTime(run.CompletedAt)}");
+        Console.WriteLine($"Status:                   {run.Status}");
+        Console.WriteLine($"Sentences:                {run.SentenceCount}");
+        Console.WriteLine($"Tokens:                   {run.TokenCount}");
+        Console.WriteLine($"Word tokens:              {run.WordTokenCount}");
+        Console.WriteLine($"Distinct words:           {run.DistinctWordCount}");
+        Console.WriteLine($"Avg words per sentence:   {FormatDouble(run.AverageWordsPerSentence)}");
+        Console.WriteLine($"Avg chars per word:       {FormatDouble(run.AverageCharactersPerWord)}");
+        Console.WriteLine($"Report:                   {run.ReportPath}");
+        return 0;
     }
 
     private static async Task<int> PrintTopWordsAsync(string[] args)
@@ -499,6 +562,8 @@ public static class Program
         Console.WriteLine("  demo [--out <dir>]");
         Console.WriteLine("  corpus create <name> [--language <code>] [--description <text>] [--db <file>]");
         Console.WriteLine("  corpus list [--db <file>]");
+        Console.WriteLine("  stats runs [--corpus-id <id>] [--limit <n>] [--db <file>]");
+        Console.WriteLine("  stats summary <runId> [--db <file>]");
         Console.WriteLine("  stats words <runId> [--limit <n>] [--db <file>]");
         Console.WriteLine("  stats ngrams <runId> [--n <n>] [--limit <n>] [--db <file>]");
         Console.WriteLine("  stats next <runId> [--word <word>] [--limit <n>] [--db <file>]");
@@ -525,6 +590,8 @@ public static class Program
     private static void WriteStatsHelp()
     {
         Console.WriteLine("Stats examples:");
+        Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats runs --limit 10");
+        Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats summary 1");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats words 1 --limit 25");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats ngrams 1 --n 3 --limit 25");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats next 1 --word alice --limit 25");
@@ -591,9 +658,32 @@ public static class Program
         return parsed;
     }
 
+
+
+    private static long? TryReadLongOption(CommandLineOptions options, string key)
+    {
+        string? value = options.TryGet(key);
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        if (!long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out long parsed))
+        {
+            throw new InvalidOperationException($"Option --{key} must be an integer.");
+        }
+
+        return parsed;
+    }
+
     private static string FormatDouble(double value)
     {
-        return value.ToString("0.####", CultureInfo.InvariantCulture);
+        return value.ToString("0.##", CultureInfo.InvariantCulture);
+    }
+
+    private static string FormatDateTime(DateTimeOffset value)
+    {
+        return value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
     }
 
     private static string TrimForColumn(string value, int maxLength)

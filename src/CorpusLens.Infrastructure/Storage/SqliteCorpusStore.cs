@@ -360,6 +360,133 @@ public sealed class SqliteCorpusStore
         return chapters;
     }
 
+
+
+    public async Task<IReadOnlyList<StoredAnalysisRunSummary>> ListAnalysisRunsAsync(
+        long? corpusId = null,
+        int limit = 50,
+        CancellationToken cancellationToken = default)
+    {
+        await InitializeAsync(cancellationToken).ConfigureAwait(false);
+        int safeLimit = NormalizeLimit(limit);
+        List<StoredAnalysisRunSummary> runs = new();
+
+        await using SqliteConnection connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await EnableForeignKeysAsync(connection, cancellationToken).ConfigureAwait(false);
+
+        await using SqliteCommand command = connection.CreateCommand();
+        if (corpusId is null)
+        {
+            command.CommandText = """
+                SELECT
+                    ar.Id,
+                    ar.CorpusId,
+                    c.Name AS CorpusName,
+                    ar.BookId,
+                    b.Title AS BookTitle,
+                    ar.StartedAt,
+                    ar.CompletedAt,
+                    ar.Status,
+                    ar.SentenceCount,
+                    ar.TokenCount,
+                    ar.WordTokenCount,
+                    ar.DistinctWordCount,
+                    ar.AverageWordsPerSentence,
+                    ar.AverageCharactersPerWord,
+                    ar.ReportPath
+                FROM AnalysisRun ar
+                INNER JOIN Corpus c ON c.Id = ar.CorpusId
+                INNER JOIN Book b ON b.Id = ar.BookId
+                ORDER BY ar.Id DESC
+                LIMIT $limit;
+                """;
+        }
+        else
+        {
+            command.CommandText = """
+                SELECT
+                    ar.Id,
+                    ar.CorpusId,
+                    c.Name AS CorpusName,
+                    ar.BookId,
+                    b.Title AS BookTitle,
+                    ar.StartedAt,
+                    ar.CompletedAt,
+                    ar.Status,
+                    ar.SentenceCount,
+                    ar.TokenCount,
+                    ar.WordTokenCount,
+                    ar.DistinctWordCount,
+                    ar.AverageWordsPerSentence,
+                    ar.AverageCharactersPerWord,
+                    ar.ReportPath
+                FROM AnalysisRun ar
+                INNER JOIN Corpus c ON c.Id = ar.CorpusId
+                INNER JOIN Book b ON b.Id = ar.BookId
+                WHERE ar.CorpusId = $corpusId
+                ORDER BY ar.Id DESC
+                LIMIT $limit;
+                """;
+            AddParameter(command, "$corpusId", corpusId.Value);
+        }
+
+        AddParameter(command, "$limit", safeLimit);
+
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            runs.Add(ReadAnalysisRunSummary(reader));
+        }
+
+        return runs;
+    }
+
+    public async Task<StoredAnalysisRunSummary?> GetAnalysisRunSummaryAsync(
+        long analysisRunId,
+        CancellationToken cancellationToken = default)
+    {
+        await InitializeAsync(cancellationToken).ConfigureAwait(false);
+
+        await using SqliteConnection connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await EnableForeignKeysAsync(connection, cancellationToken).ConfigureAwait(false);
+
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT
+                ar.Id,
+                ar.CorpusId,
+                c.Name AS CorpusName,
+                ar.BookId,
+                b.Title AS BookTitle,
+                ar.StartedAt,
+                ar.CompletedAt,
+                ar.Status,
+                ar.SentenceCount,
+                ar.TokenCount,
+                ar.WordTokenCount,
+                ar.DistinctWordCount,
+                ar.AverageWordsPerSentence,
+                ar.AverageCharactersPerWord,
+                ar.ReportPath
+            FROM AnalysisRun ar
+            INNER JOIN Corpus c ON c.Id = ar.CorpusId
+            INNER JOIN Book b ON b.Id = ar.BookId
+            WHERE ar.Id = $analysisRunId
+            LIMIT 1;
+            """;
+        AddParameter(command, "$analysisRunId", analysisRunId);
+
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        return ReadAnalysisRunSummary(reader);
+    }
+
     public async Task<IReadOnlyList<StoredWordStatistic>> ListTopWordsAsync(
         long analysisRunId,
         int limit = 50,
@@ -706,6 +833,28 @@ public sealed class SqliteCorpusStore
             reader.GetString(3),
             ParseDateTime(reader.GetString(4)),
             ParseDateTime(reader.GetString(5)));
+    }
+
+
+
+    private static StoredAnalysisRunSummary ReadAnalysisRunSummary(SqliteDataReader reader)
+    {
+        return new StoredAnalysisRunSummary(
+            reader.GetInt64(0),
+            reader.GetInt64(1),
+            reader.GetString(2),
+            reader.GetInt64(3),
+            reader.GetString(4),
+            ParseDateTime(reader.GetString(5)),
+            ParseDateTime(reader.GetString(6)),
+            reader.GetString(7),
+            reader.GetInt32(8),
+            reader.GetInt32(9),
+            reader.GetInt32(10),
+            reader.GetInt32(11),
+            reader.GetDouble(12),
+            reader.GetDouble(13),
+            reader.GetString(14));
     }
 
     private static StoredWordStatistic ReadWordStatistic(SqliteDataReader reader)

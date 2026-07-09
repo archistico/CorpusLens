@@ -19,7 +19,7 @@ LIMIT ?= 25
 WORD ?= alice
 N ?= 3
 
-.PHONY: restore build test check demo clean clean-data clean-artifacts corpus-create corpus-list analyze-text analyze-book analyze-books analyze-books-recursive stats-words stats-ngrams stats-trigrams stats-next stats-categories
+.PHONY: restore build test check demo clean clean-data clean-artifacts corpus-create corpus-list analyze-text analyze-book analyze-books analyze-books-recursive stats-runs stats-summary stats-words stats-ngrams stats-trigrams stats-next stats-categories
 
 restore:
 	$(DOTNET) restore
@@ -60,6 +60,13 @@ analyze-books:
 
 analyze-books-recursive:
 	$(DOTNET) run --project $(PROJECT) -- analyze-epub-folder $(BOOKS) --language $(LANG) --corpus "$(CORPUS)" --db $(DB) --out $(OUT) --recursive
+
+
+stats-runs:
+	$(DOTNET) run --project $(PROJECT) -- stats runs --limit $(LIMIT) --db $(DB)
+
+stats-summary:
+	$(DOTNET) run --project $(PROJECT) -- stats summary $(RUN) --db $(DB)
 
 stats-words:
 	$(DOTNET) run --project $(PROJECT) -- stats words $(RUN) --limit $(LIMIT) --db $(DB)
