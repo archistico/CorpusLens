@@ -372,3 +372,15 @@ make stats-kwic RUN=1 WORD="don't" LIMIT=10 CONTEXT=8
 make stats-word RUN=1 WORD="alice's" LIMIT=25
 make stats-kwic RUN=1 WORD="alice's" LIMIT=10 CONTEXT=8
 ```
+
+
+## Milestone 8 — Sentence splitter migliorato
+
+Il sentence splitter gestisce meglio narrativa inglese e dialoghi:
+
+- abbreviazioni come `Mr.`, `Mrs.`, `Dr.`, `Prof.`, `e.g.`, `i.e.`;
+- numeri decimali come `3.14`;
+- dialoghi con attribuzione successiva, ad esempio `"Who are you?" said the Caterpillar.`;
+- titoli come `CHAPTER I.` come unità autonoma.
+
+Dettagli: `docs/milestone-8-sentence-splitter.md`.

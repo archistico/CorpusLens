@@ -7,7 +7,8 @@ public sealed class SentenceSplitter
 {
     private static readonly HashSet<string> KnownAbbreviations = new(StringComparer.OrdinalIgnoreCase)
     {
-        "Mr", "Mrs", "Ms", "Dr", "Prof", "Sr", "Jr", "St", "vs", "etc", "e.g", "i.e"
+        "mr.", "mrs.", "ms.", "dr.", "prof.", "sr.", "jr.", "st.", "vs.", "etc.",
+        "e.g.", "i.e.", "u.s.", "u.k."
     };
 
     private readonly TextNormalizer _normalizer;
@@ -36,12 +37,14 @@ public sealed class SentenceSplitter
                 continue;
             }
 
-            if (current == '.' && IsPartOfKnownAbbreviation(normalizedText, i))
+            if (ShouldIgnoreTerminator(normalizedText, i))
             {
                 continue;
             }
 
             int sentenceEnd = IncludeTrailingQuotesAndBrackets(normalizedText, i);
+            sentenceEnd = TryExtendQuotedDialogueAttribution(normalizedText, i, sentenceEnd);
+
             AddSentence(sentences, normalizedText, sentenceStart, sentenceEnd, index);
             index++;
 
@@ -67,16 +70,97 @@ public sealed class SentenceSplitter
         return value is '.' or '?' or '!';
     }
 
+    private static bool ShouldIgnoreTerminator(string text, int terminatorIndex)
+    {
+        char current = text[terminatorIndex];
+
+        if (current == '.' && IsDecimalPoint(text, terminatorIndex))
+        {
+            return true;
+        }
+
+        if (current == '.' && IsEllipsisDotBeforeLast(text, terminatorIndex))
+        {
+            return true;
+        }
+
+        if (current == '.' && IsPartOfKnownAbbreviation(text, terminatorIndex))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsDecimalPoint(string text, int dotIndex)
+    {
+        return dotIndex > 0
+            && dotIndex + 1 < text.Length
+            && char.IsDigit(text[dotIndex - 1])
+            && char.IsDigit(text[dotIndex + 1]);
+    }
+
+    private static bool IsEllipsisDotBeforeLast(string text, int dotIndex)
+    {
+        return dotIndex + 1 < text.Length && text[dotIndex + 1] == '.';
+    }
+
     private static int IncludeTrailingQuotesAndBrackets(string text, int terminatorIndex)
     {
         int index = terminatorIndex;
 
-        while (index + 1 < text.Length && text[index + 1] is '"' or '\'' or ')' or ']' or '}')
+        while (index + 1 < text.Length && IsClosingQuoteOrBracket(text[index + 1]))
         {
             index++;
         }
 
         return index;
+    }
+
+    private static bool IsClosingQuoteOrBracket(char value)
+    {
+        return value is '"' or '\'' or '”' or '’' or '»' or ')' or ']' or '}';
+    }
+
+    private static int TryExtendQuotedDialogueAttribution(string text, int terminatorIndex, int sentenceEnd)
+    {
+        if (sentenceEnd == terminatorIndex)
+        {
+            return sentenceEnd;
+        }
+
+        if (!IsClosingQuoteOrBracket(text[sentenceEnd]))
+        {
+            return sentenceEnd;
+        }
+
+        int nextIndex = sentenceEnd + 1;
+        while (nextIndex < text.Length && (char.IsWhiteSpace(text[nextIndex]) || text[nextIndex] is ',' or ';'))
+        {
+            nextIndex++;
+        }
+
+        if (nextIndex >= text.Length || !char.IsLower(text[nextIndex]))
+        {
+            return sentenceEnd;
+        }
+
+        for (int i = nextIndex; i < text.Length; i++)
+        {
+            if (!IsSentenceTerminator(text[i]))
+            {
+                continue;
+            }
+
+            if (ShouldIgnoreTerminator(text, i))
+            {
+                continue;
+            }
+
+            return IncludeTrailingQuotesAndBrackets(text, i);
+        }
+
+        return sentenceEnd;
     }
 
     private static void AddSentence(
@@ -91,13 +175,14 @@ public sealed class SentenceSplitter
             return;
         }
 
-        string sentenceText = fullText[startOffset..(endOffset + 1)].Trim();
+        string segment = fullText[startOffset..(endOffset + 1)];
+        string sentenceText = segment.Trim();
         if (sentenceText.Length == 0)
         {
             return;
         }
 
-        int leadingWhitespace = fullText[startOffset..(endOffset + 1)].Length - fullText[startOffset..(endOffset + 1)].TrimStart().Length;
+        int leadingWhitespace = segment.Length - segment.TrimStart().Length;
         int actualStart = startOffset + leadingWhitespace;
         string normalized = sentenceText.ToLowerInvariant();
 
@@ -106,13 +191,29 @@ public sealed class SentenceSplitter
 
     private static bool IsPartOfKnownAbbreviation(string text, int dotIndex)
     {
-        int start = dotIndex - 1;
-        while (start >= 0 && (char.IsLetter(text[start]) || text[start] == '.'))
+        string candidate = ExtractDottedToken(text, dotIndex);
+        return KnownAbbreviations.Contains(candidate);
+    }
+
+    private static string ExtractDottedToken(string text, int dotIndex)
+    {
+        int start = dotIndex;
+        while (start > 0 && IsDottedTokenCharacter(text[start - 1]))
         {
             start--;
         }
 
-        string candidate = text[(start + 1)..dotIndex];
-        return KnownAbbreviations.Contains(candidate);
+        int end = dotIndex;
+        while (end + 1 < text.Length && IsDottedTokenCharacter(text[end + 1]))
+        {
+            end++;
+        }
+
+        return text[start..(end + 1)];
+    }
+
+    private static bool IsDottedTokenCharacter(char value)
+    {
+        return char.IsLetter(value) || value == '.';
     }
 }

@@ -19,6 +19,8 @@ public sealed class SimplePhraseClassifierTests
     [InlineData("That is great!", PhraseCategory.Exclamation)]
     [InlineData("Do you know Anna?\"", PhraseCategory.Question)]
     [InlineData("That is great!\"", PhraseCategory.Exclamation)]
+    [InlineData("\"Who are you?\" said the Caterpillar.", PhraseCategory.Question)]
+    [InlineData("\"Oh dear!\" cried Alice.", PhraseCategory.Exclamation)]
     public void Classify_ShouldReturnExpectedCategory(string text, PhraseCategory expected)
     {
         TextSentence sentence = new(0, text, text.ToLowerInvariant(), 0, text.Length - 1);

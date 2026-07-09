@@ -32,12 +32,12 @@ public sealed class SimplePhraseClassifier
         ArgumentNullException.ThrowIfNull(tokens);
 
         string text = TrimTrailingClosingPunctuation(sentence.Text);
-        if (text.EndsWith("?", StringComparison.Ordinal))
+        if (text.EndsWith("?", StringComparison.Ordinal) || sentence.Text.Contains("?", StringComparison.Ordinal))
         {
             return PhraseCategory.Question;
         }
 
-        if (text.EndsWith("!", StringComparison.Ordinal))
+        if (text.EndsWith("!", StringComparison.Ordinal) || sentence.Text.Contains("!", StringComparison.Ordinal))
         {
             return PhraseCategory.Exclamation;
         }

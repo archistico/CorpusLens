@@ -283,6 +283,10 @@ Questa divisione potrà essere valutata in una fase linguistica più avanzata.
 
 ## Milestone 8 — Sentence splitter migliorato
 
+### Stato
+
+IMPLEMENTATA nella milestone 8.
+
 ### Obiettivo
 
 Migliorare la divisione in frasi, soprattutto per dialoghi, abbreviazioni e titoli.
