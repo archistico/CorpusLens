@@ -35,7 +35,7 @@ N ?= 3
 CONTEXT ?= 8
 DIAGNOSTICS_OUT ?= ./artifacts/diagnostics/import_diagnostics.md
 
-.PHONY: restore build test check demo clean clean-data clean-artifacts setup-books corpus-create corpus-create-en corpus-create-it corpus-list analyze-text analyze-book analyze-books analyze-books-recursive analyze-en analyze-it analyze-en-recursive analyze-it-recursive stats-runs stats-summary stats-words stats-content stats-function stats-word stats-kwic stats-ngrams stats-trigrams stats-next stats-categories inspect-run
+.PHONY: restore build test check demo clean clean-data clean-artifacts setup-books corpus-create corpus-create-en corpus-create-it corpus-list analyze-text analyze-book analyze-books analyze-books-recursive analyze-en analyze-it analyze-en-recursive analyze-it-recursive stats-runs stats-summary stats-books stats-words stats-content stats-function stats-word stats-kwic stats-ngrams stats-trigrams stats-next stats-categories inspect-run
 
 restore:
 	$(DOTNET) restore
@@ -104,6 +104,9 @@ stats-runs:
 
 stats-summary:
 	$(DOTNET) run --project $(PROJECT) -- stats summary $(RUN) --db $(DB)
+
+stats-books:
+	$(DOTNET) run --project $(PROJECT) -- stats books $(RUN) --db $(DB)
 
 stats-words:
 	$(DOTNET) run --project $(PROJECT) -- stats words $(RUN) --limit $(LIMIT) --db $(DB)

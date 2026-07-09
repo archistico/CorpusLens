@@ -204,13 +204,21 @@ public static class Program
         IReadOnlyList<StoredChapter> chapters = await store
             .ListChaptersAsync(run.BookId)
             .ConfigureAwait(false);
+        IReadOnlyList<StoredAnalysisRunBook> runBooks = await store
+            .ListAnalysisRunBooksAsync(run.Id)
+            .ConfigureAwait(false);
 
         ImportDiagnosticsWriter writer = new();
-        await writer.WriteAsync(run, chapters, outputPath).ConfigureAwait(false);
+        await writer.WriteAsync(run, chapters, outputPath, runBooks.Count > 0 ? runBooks.Count : 1).ConfigureAwait(false);
 
         Console.WriteLine("Import diagnostics generated.");
         Console.WriteLine($"Run Id:      {run.Id}");
         Console.WriteLine($"Book/Source: {run.BookTitle}");
+        if (runBooks.Count > 0)
+        {
+            Console.WriteLine($"Books:       {runBooks.Count}");
+        }
+
         Console.WriteLine($"Chapters:    {chapters.Count}");
         Console.WriteLine($"Output:      {outputPath}");
         return 0;
@@ -239,6 +247,7 @@ public static class Program
         {
             "runs" => await PrintAnalysisRunsAsync(subCommandArgs).ConfigureAwait(false),
             "summary" => await PrintAnalysisRunSummaryAsync(subCommandArgs).ConfigureAwait(false),
+            "books" => await PrintAnalysisRunBooksAsync(subCommandArgs).ConfigureAwait(false),
             "words" => await PrintTopWordsAsync(subCommandArgs).ConfigureAwait(false),
             "word" => await PrintWordDetailAsync(subCommandArgs).ConfigureAwait(false),
             "kwic" => await PrintWordContextsAsync(subCommandArgs).ConfigureAwait(false),
@@ -307,6 +316,47 @@ public static class Program
         Console.WriteLine($"Avg words per sentence:   {FormatDouble(run.AverageWordsPerSentence)}");
         Console.WriteLine($"Avg chars per word:       {FormatDouble(run.AverageCharactersPerWord)}");
         Console.WriteLine($"Report:                   {run.ReportPath}");
+
+        IReadOnlyList<StoredAnalysisRunBook> runBooks = await store
+            .ListAnalysisRunBooksAsync(analysisRunId)
+            .ConfigureAwait(false);
+        if (runBooks.Count > 0)
+        {
+            Console.WriteLine($"Source books:             {runBooks.Count}");
+        }
+
+        return 0;
+    }
+
+    private static async Task<int> PrintAnalysisRunBooksAsync(string[] args)
+    {
+        if (!TryReadRunId(args, out long analysisRunId))
+        {
+            WriteStatsHelp();
+            return 1;
+        }
+
+        CommandLineOptions options = CommandLineOptions.Parse(args.Skip(1).ToArray());
+        SqliteCorpusStore store = new(options.Get("db", DefaultDatabasePath()));
+        IReadOnlyList<StoredAnalysisRunBook> books = await store
+            .ListAnalysisRunBooksAsync(analysisRunId)
+            .ConfigureAwait(false);
+
+        Console.WriteLine($"Source books for run {analysisRunId}");
+        if (books.Count == 0)
+        {
+            Console.WriteLine("No source books linked to this run.");
+            return 0;
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("#    Book                              Author                    Chapters  Characters");
+        Console.WriteLine("---  --------------------------------  ------------------------  --------  ----------");
+        foreach (StoredAnalysisRunBook book in books)
+        {
+            Console.WriteLine($"{book.OrderIndex,3}  {TrimForColumn(book.Title, 32),-32}  {TrimForColumn(book.Author, 24),-24}  {book.ChapterCount,8}  {book.CharacterCount,10}");
+        }
+
         return 0;
     }
 
@@ -747,6 +797,7 @@ public static class Program
         Console.WriteLine($"Corpus Id:  {result.Corpus.Id}");
         Console.WriteLine($"Book Id:    {result.Book.Id}");
         Console.WriteLine($"Run Id:     {result.AnalysisRun.Id}");
+        Console.WriteLine($"Run books:  {result.AnalysisRunBooks.Count}");
     }
 
     private static void WriteHelp()
@@ -759,6 +810,7 @@ public static class Program
         Console.WriteLine("  corpus list [--db <file>]");
         Console.WriteLine("  stats runs [--corpus-id <id>] [--limit <n>] [--db <file>]");
         Console.WriteLine("  stats summary <runId> [--db <file>]");
+        Console.WriteLine("  stats books <runId> [--db <file>]");
         Console.WriteLine("  stats words <runId> [--limit <n>] [--content-only] [--function-only] [--db <file>]");
         Console.WriteLine("  stats word <runId> <word> [--limit <n>] [--db <file>]");
         Console.WriteLine("  stats kwic <runId> <word> [--limit <n>] [--context <n>] [--db <file>]");
@@ -791,6 +843,7 @@ public static class Program
         Console.WriteLine("Stats examples:");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats runs --limit 10");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats summary 1");
+        Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats books 1");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats words 1 --limit 25");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats words 1 --content-only --limit 25");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats words 1 --function-only --limit 25");

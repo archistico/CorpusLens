@@ -1,3 +1,4 @@
+using CorpusLens.Domain.Books;
 using CorpusLens.Domain.Storage;
 using CorpusLens.Infrastructure.Storage;
 
@@ -45,14 +46,23 @@ public sealed class AnalyzeEpubFolderAndSaveUseCase
                 request.Recursive), cancellationToken)
             .ConfigureAwait(false);
 
-        StoredBookImport importedBook = await store
+        StoredBookImport aggregateBook = await store
             .SaveImportedBookAsync(corpus.Id, analysisResult.Book, cancellationToken)
             .ConfigureAwait(false);
+
+        List<StoredBookImport> sourceBookImports = new();
+        foreach (ImportedBook sourceBook in analysisResult.SourceBooks)
+        {
+            StoredBookImport sourceBookImport = await store
+                .SaveImportedBookAsync(corpus.Id, sourceBook, cancellationToken)
+                .ConfigureAwait(false);
+            sourceBookImports.Add(sourceBookImport);
+        }
 
         StoredAnalysisRun analysisRun = await store
             .SaveAnalysisRunAsync(
                 corpus.Id,
-                importedBook.Book.Id,
+                aggregateBook.Book.Id,
                 request.Settings,
                 analysisResult.Analysis,
                 analysisResult.ReportPath,
@@ -63,6 +73,16 @@ public sealed class AnalyzeEpubFolderAndSaveUseCase
                 cancellationToken)
             .ConfigureAwait(false);
 
-        return new AnalyzeEpubFolderAndSaveResult(analysisResult, corpus, importedBook.Book, analysisRun);
+        IReadOnlyList<StoredAnalysisRunBook> runBooks = await store
+            .SaveAnalysisRunBooksAsync(analysisRun.Id, sourceBookImports, cancellationToken)
+            .ConfigureAwait(false);
+
+        return new AnalyzeEpubFolderAndSaveResult(
+            analysisResult,
+            corpus,
+            aggregateBook.Book,
+            sourceBookImports.Select(sourceBook => sourceBook.Book).ToArray(),
+            runBooks,
+            analysisRun);
     }
 }

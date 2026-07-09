@@ -6,4 +6,6 @@ public sealed record AnalyzeEpubFolderAndSaveResult(
     AnalyzeEpubFolderResult AnalysisResult,
     StoredCorpus Corpus,
     StoredBook Book,
+    IReadOnlyList<StoredBook> SourceBooks,
+    IReadOnlyList<StoredAnalysisRunBook> AnalysisRunBooks,
     StoredAnalysisRun AnalysisRun);

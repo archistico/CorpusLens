@@ -12,7 +12,7 @@ namespace CorpusLens.Infrastructure.Storage;
 
 public sealed class SqliteCorpusStore
 {
-    private const string EngineVersion = "0.5";
+    private const string EngineVersion = "0.6";
 
     private static readonly byte[] DirectoryHashSeparator = { 0 };
 
@@ -63,6 +63,11 @@ public sealed class SqliteCorpusStore
         await ExecuteNonQueryAsync(
             connection,
             "CREATE INDEX IF NOT EXISTS IX_NextWordStatistic_AnalysisRunId_NextWord_Count ON NextWordStatistic (AnalysisRunId, NextWord, Count DESC);",
+            cancellationToken)
+            .ConfigureAwait(false);
+        await ExecuteNonQueryAsync(
+            connection,
+            "CREATE INDEX IF NOT EXISTS IX_AnalysisRunBook_AnalysisRunId_OrderIndex ON AnalysisRunBook (AnalysisRunId, OrderIndex);",
             cancellationToken)
             .ConfigureAwait(false);
     }
@@ -349,6 +354,118 @@ public sealed class SqliteCorpusStore
             nextWordsCsvPath,
             extractedTextPath,
             string.Empty);
+    }
+
+
+    public async Task<IReadOnlyList<StoredAnalysisRunBook>> SaveAnalysisRunBooksAsync(
+        long analysisRunId,
+        IReadOnlyList<StoredBookImport> sourceBooks,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(sourceBooks);
+        await InitializeAsync(cancellationToken).ConfigureAwait(false);
+
+        await using SqliteConnection connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await EnableForeignKeysAsync(connection, cancellationToken).ConfigureAwait(false);
+        using SqliteTransaction transaction = connection.BeginTransaction();
+
+        try
+        {
+            await using (SqliteCommand deleteCommand = connection.CreateCommand())
+            {
+                deleteCommand.Transaction = transaction;
+                deleteCommand.CommandText = "DELETE FROM AnalysisRunBook WHERE AnalysisRunId = $analysisRunId;";
+                AddParameter(deleteCommand, "$analysisRunId", analysisRunId);
+                await deleteCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            for (int index = 0; index < sourceBooks.Count; index++)
+            {
+                StoredBookImport sourceBook = sourceBooks[index];
+                await using SqliteCommand command = connection.CreateCommand();
+                command.Transaction = transaction;
+                command.CommandText = """
+                    INSERT INTO AnalysisRunBook
+                        (AnalysisRunId, BookId, OrderIndex)
+                    VALUES
+                        ($analysisRunId, $bookId, $orderIndex);
+                    """;
+                AddParameter(command, "$analysisRunId", analysisRunId);
+                AddParameter(command, "$bookId", sourceBook.Book.Id);
+                AddParameter(command, "$orderIndex", index + 1);
+                await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            throw;
+        }
+
+        return await ListAnalysisRunBooksAsync(analysisRunId, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<StoredAnalysisRunBook>> ListAnalysisRunBooksAsync(
+        long analysisRunId,
+        CancellationToken cancellationToken = default)
+    {
+        await InitializeAsync(cancellationToken).ConfigureAwait(false);
+        List<StoredAnalysisRunBook> books = new();
+
+        await using SqliteConnection connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await EnableForeignKeysAsync(connection, cancellationToken).ConfigureAwait(false);
+
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT
+                arb.AnalysisRunId,
+                arb.BookId,
+                arb.OrderIndex,
+                b.Title,
+                b.Author,
+                b.LanguageCode,
+                b.OriginalFilePath,
+                b.FileHash,
+                COUNT(ch.Id) AS ChapterCount,
+                COALESCE(SUM(ch.CharacterCount), 0) AS CharacterCount
+            FROM AnalysisRunBook arb
+            INNER JOIN Book b ON b.Id = arb.BookId
+            LEFT JOIN Chapter ch ON ch.BookId = b.Id
+            WHERE arb.AnalysisRunId = $analysisRunId
+            GROUP BY
+                arb.AnalysisRunId,
+                arb.BookId,
+                arb.OrderIndex,
+                b.Title,
+                b.Author,
+                b.LanguageCode,
+                b.OriginalFilePath,
+                b.FileHash
+            ORDER BY arb.OrderIndex;
+            """;
+        AddParameter(command, "$analysisRunId", analysisRunId);
+
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            books.Add(new StoredAnalysisRunBook(
+                reader.GetInt64(0),
+                reader.GetInt64(1),
+                reader.GetInt32(2),
+                reader.GetString(3),
+                reader.GetString(4),
+                reader.GetString(5),
+                reader.GetString(6),
+                reader.GetString(7),
+                Convert.ToInt32(reader.GetInt64(8), CultureInfo.InvariantCulture),
+                Convert.ToInt32(reader.GetInt64(9), CultureInfo.InvariantCulture)));
+        }
+
+        return books;
     }
 
     public async Task<IReadOnlyList<StoredChapter>> ListChaptersAsync(
@@ -1378,6 +1495,20 @@ public sealed class SqliteCorpusStore
 
         CREATE INDEX IF NOT EXISTS IX_AnalysisRun_CorpusId ON AnalysisRun (CorpusId);
         CREATE INDEX IF NOT EXISTS IX_AnalysisRun_BookId ON AnalysisRun (BookId);
+
+        CREATE TABLE IF NOT EXISTS AnalysisRunBook
+        (
+            Id INTEGER PRIMARY KEY AUTOINCREMENT,
+            AnalysisRunId INTEGER NOT NULL,
+            BookId INTEGER NOT NULL,
+            OrderIndex INTEGER NOT NULL,
+            FOREIGN KEY (AnalysisRunId) REFERENCES AnalysisRun(Id) ON DELETE CASCADE,
+            FOREIGN KEY (BookId) REFERENCES Book(Id) ON DELETE CASCADE,
+            UNIQUE (AnalysisRunId, BookId)
+        );
+
+        CREATE INDEX IF NOT EXISTS IX_AnalysisRunBook_AnalysisRunId_OrderIndex ON AnalysisRunBook (AnalysisRunId, OrderIndex);
+        CREATE INDEX IF NOT EXISTS IX_AnalysisRunBook_BookId ON AnalysisRunBook (BookId);
 
         CREATE TABLE IF NOT EXISTS WordStatistic
         (

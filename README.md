@@ -416,3 +416,19 @@ invece di:
 ```
 
 Dettagli: `docs/milestone-8-1-cli-output-polish.md`.
+
+## Run source books
+
+When an EPUB folder is analyzed with `--corpus`, CorpusLens stores the aggregate run and also links the run to the real EPUB books included in the folder.
+
+List the real books behind a run:
+
+```powershell
+make stats-books RUN=1
+```
+
+or directly:
+
+```powershell
+dotnet run --project src/CorpusLens.Cli -- stats books 1 --db ./data/corpuslens.db
+```

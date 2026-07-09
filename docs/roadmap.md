@@ -367,7 +367,7 @@ Criteri di accettazione:
 - `stats kwic` non mostra contesti destri che iniziano con `:`, `,`, virgolette o parentesi;
 - i test continuano a passare.
 
-## Milestone 9 — Database model v2: run aggregate con libri reali
+## Milestone 9 — Database model v2: run aggregate con libri reali ✅
 
 ### Problema attuale
 
@@ -1198,3 +1198,8 @@ Dopo il primo giro di diagnostica sul corpus italiano, la pulizia metadata è st
 - capitoli metadata-only italiani con `QUESTO E-BOOK`, `LICENZA`, `Liber Liber`, URL e donazioni vengono riconosciuti meglio;
 - i capitoli lunghi reali non vengono più segnalati come sospetti solo perché contengono parole deboli come `indice`, `sommario`, `prefazione` o `editore`;
 - i conteggi dei termini sospetti restano comunque visibili nel report diagnostico.
+
+
+### Milestone 9 note
+
+Aggiunto collegamento `AnalysisRunBook` tra run aggregate e libri EPUB reali. Nuovo comando: `stats books <runId>`.

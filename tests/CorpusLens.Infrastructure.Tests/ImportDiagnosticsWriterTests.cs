@@ -65,9 +65,10 @@ public sealed class ImportDiagnosticsWriterTests
             68);
 
         ImportDiagnosticsWriter writer = new();
-        string markdown = writer.BuildMarkdown(run, new[] { chapter });
+        string markdown = writer.BuildMarkdown(run, new[] { chapter }, bookCount: 35);
 
         Assert.Contains("Run Id: 7", markdown);
+        Assert.Contains("| Books imported | 35 |", markdown);
         Assert.Contains("Italian Literature", markdown);
         Assert.Contains("EPUB folder: it", markdown);
         Assert.Contains("Suspicious chapters", markdown);
