@@ -17,6 +17,8 @@ public sealed class SimplePhraseClassifierTests
     [InlineData("No, I don't.", PhraseCategory.Negation)]
     [InlineData("Could you help me, please?", PhraseCategory.Question)]
     [InlineData("That is great!", PhraseCategory.Exclamation)]
+    [InlineData("Do you know Anna?\"", PhraseCategory.Question)]
+    [InlineData("That is great!\"", PhraseCategory.Exclamation)]
     public void Classify_ShouldReturnExpectedCategory(string text, PhraseCategory expected)
     {
         TextSentence sentence = new(0, text, text.ToLowerInvariant(), 0, text.Length - 1);

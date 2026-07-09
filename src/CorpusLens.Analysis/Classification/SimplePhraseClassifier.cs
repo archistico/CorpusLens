@@ -31,7 +31,7 @@ public sealed class SimplePhraseClassifier
         ArgumentNullException.ThrowIfNull(sentence);
         ArgumentNullException.ThrowIfNull(tokens);
 
-        string text = sentence.Text.Trim();
+        string text = TrimTrailingClosingPunctuation(sentence.Text);
         if (text.EndsWith("?", StringComparison.Ordinal))
         {
             return PhraseCategory.Question;
@@ -63,6 +63,11 @@ public sealed class SimplePhraseClassifier
         }
 
         return words.Count > 0 ? PhraseCategory.Statement : PhraseCategory.Other;
+    }
+
+    private static string TrimTrailingClosingPunctuation(string text)
+    {
+        return text.Trim().TrimEnd('"', '\'', '”', '’', '»', ')', ']', '}');
     }
 
     private static bool ContainsGreeting(IReadOnlyList<string> words)

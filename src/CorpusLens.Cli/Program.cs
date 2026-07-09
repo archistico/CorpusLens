@@ -1,3 +1,4 @@
+using CorpusLens.Application.EpubAnalysis;
 using CorpusLens.Application.TextAnalysis;
 using CorpusLens.Domain.Analysis;
 
@@ -32,6 +33,7 @@ public static class Program
             {
                 "demo" => await RunDemoAsync(commandArgs).ConfigureAwait(false),
                 "analyze-text" => await AnalyzeTextFileAsync(commandArgs).ConfigureAwait(false),
+                "analyze-epub" => await AnalyzeEpubAsync(commandArgs).ConfigureAwait(false),
                 _ => UnknownCommand(command)
             };
         }
@@ -91,6 +93,34 @@ public static class Program
         return 0;
     }
 
+    private static async Task<int> AnalyzeEpubAsync(string[] args)
+    {
+        if (args.Length == 0)
+        {
+            Console.Error.WriteLine("Missing EPUB file path.");
+            Console.Error.WriteLine();
+            WriteAnalyzeEpubHelp();
+            return 1;
+        }
+
+        string filePath = args[0];
+        CommandLineOptions options = CommandLineOptions.Parse(args.Skip(1).ToArray());
+
+        string languageCode = options.Get("language", "en");
+        string outputDirectory = options.Get("out", "./artifacts/epub-analysis");
+
+        AnalyzeEpubUseCase useCase = new();
+        AnalyzeEpubResult result = await useCase.ExecuteAsync(new AnalyzeEpubRequest(
+            filePath,
+            languageCode,
+            outputDirectory,
+            DefaultSettings()))
+            .ConfigureAwait(false);
+
+        WriteResult(result);
+        return 0;
+    }
+
     private static AnalysisSettings DefaultSettings()
     {
         return new AnalysisSettings
@@ -120,6 +150,19 @@ public static class Program
         Console.WriteLine($"Next CSV:   {result.NextWordsCsvPath}");
     }
 
+    private static void WriteResult(AnalyzeEpubResult result)
+    {
+        Console.WriteLine("CorpusLens EPUB analysis completed.");
+        Console.WriteLine($"Title:      {result.Book.Title}");
+        Console.WriteLine($"Author:     {result.Book.Author}");
+        Console.WriteLine($"Chapters:   {result.Book.Chapters.Count}");
+        Console.WriteLine($"Text:       {result.ExtractedTextPath}");
+        Console.WriteLine($"Report:     {result.ReportPath}");
+        Console.WriteLine($"Words CSV:  {result.WordsCsvPath}");
+        Console.WriteLine($"NGrams CSV: {result.NGramsCsvPath}");
+        Console.WriteLine($"Next CSV:   {result.NextWordsCsvPath}");
+    }
+
     private static void WriteHelp()
     {
         Console.WriteLine("CorpusLens");
@@ -127,15 +170,25 @@ public static class Program
         Console.WriteLine("Commands:");
         Console.WriteLine("  demo [--out <dir>]");
         Console.WriteLine("  analyze-text <file> [--language <code>] [--title <title>] [--out <dir>]");
+        Console.WriteLine("  analyze-epub <file.epub> [--language <code>] [--out <dir>]");
         Console.WriteLine();
         WriteAnalyzeTextHelp();
+        WriteAnalyzeEpubHelp();
     }
 
     private static void WriteAnalyzeTextHelp()
     {
-        Console.WriteLine("Examples:");
+        Console.WriteLine("Text examples:");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- demo --out ./artifacts/demo");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- analyze-text ./samples/texts/sample_english_short.txt --language en --title \"Sample English\" --out ./artifacts/sample");
+        Console.WriteLine();
+    }
+
+    private static void WriteAnalyzeEpubHelp()
+    {
+        Console.WriteLine("EPUB examples:");
+        Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- analyze-epub ./samples/epubs/alice.epub --language en --out ./artifacts/alice");
+        Console.WriteLine();
     }
 
     private sealed class CommandLineOptions

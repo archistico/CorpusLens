@@ -61,3 +61,29 @@ Generated files:
 - `docs/technical-design.md`
 - `docs/roadmap.md`
 - `docs/analysis-rules.md`
+
+## Milestone 1 — EPUB import
+
+La prima importazione EPUB è disponibile tramite CLI:
+
+```powershell
+dotnet run --project src/CorpusLens.Cli -- analyze-epub ./books/alice.epub --language en --out ./artifacts/alice
+```
+
+Output generati:
+
+```text
+extracted_text.txt
+report.md
+words.csv
+ngrams.csv
+next_words.csv
+```
+
+In questa milestone l'EPUB viene letto con VersOne.Epub, i contenuti HTML/XHTML vengono convertiti in testo con HtmlAgilityPack e poi analizzati con il motore già esistente.
+
+
+## Milestone 1 fix 2 notes
+
+The EPUB import pipeline now removes Project Gutenberg boilerplate when standard START/END markers are present. The Markdown report also sorts the `Next words` preview by descending count, so the section shows the most relevant transitions instead of only the first alphabetical word group.
+
