@@ -60,6 +60,22 @@ public sealed class CorpusAnalyzerTests
     }
 
 
+
+    [Fact]
+    public void Analyze_ShouldClassifyStopWordsForDocumentLanguage()
+    {
+        CorpusAnalyzer analyzer = new();
+        TextDocument document = new("sample", "Sample", "en", "The rabbit and Alice ran.");
+
+        CorpusAnalysisResult result = analyzer.Analyze(document, Settings());
+
+        WordFrequency the = Assert.Single(result.Words, word => word.Word == "the");
+        WordFrequency rabbit = Assert.Single(result.Words, word => word.Word == "rabbit");
+
+        Assert.True(the.IsStopWord);
+        Assert.False(rabbit.IsStopWord);
+    }
+
     [Fact]
     public void Analyze_ShouldUseEachDocumentForDocumentCount()
     {

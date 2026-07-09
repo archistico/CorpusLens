@@ -5,6 +5,10 @@
 #   make analyze-book BOOK=./books/alice.epub OUT=./artifacts/alice CORPUS="English Literature"
 #   make analyze-books BOOKS=./books OUT=./artifacts/books CORPUS="English Literature"
 #   make stats-words RUN=1 LIMIT=25
+#   make stats-content RUN=1 LIMIT=25
+#   make stats-function RUN=1 LIMIT=25
+#   make stats-word RUN=1 WORD=alice LIMIT=25
+#   make stats-kwic RUN=1 WORD=alice LIMIT=10 CONTEXT=8
 
 DOTNET ?= dotnet
 PROJECT ?= src/CorpusLens.Cli
@@ -18,8 +22,9 @@ RUN ?= 1
 LIMIT ?= 25
 WORD ?= alice
 N ?= 3
+CONTEXT ?= 8
 
-.PHONY: restore build test check demo clean clean-data clean-artifacts corpus-create corpus-list analyze-text analyze-book analyze-books analyze-books-recursive stats-runs stats-summary stats-words stats-ngrams stats-trigrams stats-next stats-categories
+.PHONY: restore build test check demo clean clean-data clean-artifacts corpus-create corpus-list analyze-text analyze-book analyze-books analyze-books-recursive stats-runs stats-summary stats-words stats-content stats-function stats-word stats-kwic stats-ngrams stats-trigrams stats-next stats-categories
 
 restore:
 	$(DOTNET) restore
@@ -70,6 +75,18 @@ stats-summary:
 
 stats-words:
 	$(DOTNET) run --project $(PROJECT) -- stats words $(RUN) --limit $(LIMIT) --db $(DB)
+
+stats-content:
+	$(DOTNET) run --project $(PROJECT) -- stats words $(RUN) --content-only --limit $(LIMIT) --db $(DB)
+
+stats-function:
+	$(DOTNET) run --project $(PROJECT) -- stats words $(RUN) --function-only --limit $(LIMIT) --db $(DB)
+
+stats-word:
+	$(DOTNET) run --project $(PROJECT) -- stats word $(RUN) $(WORD) --limit $(LIMIT) --db $(DB)
+
+stats-kwic:
+	$(DOTNET) run --project $(PROJECT) -- stats kwic $(RUN) $(WORD) --limit $(LIMIT) --context $(CONTEXT) --db $(DB)
 
 stats-ngrams:
 	$(DOTNET) run --project $(PROJECT) -- stats ngrams $(RUN) --limit $(LIMIT) --db $(DB)

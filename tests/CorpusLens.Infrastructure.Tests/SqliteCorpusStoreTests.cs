@@ -122,8 +122,9 @@ public sealed class SqliteCorpusStoreTests
             new CorpusSummary(1, 3, 12, 9, 5, 3.0, 4.0),
             new[]
             {
-                new WordFrequency("alice", 4, 1, 444444.44),
-                new WordFrequency("hello", 2, 1, 222222.22)
+                new WordFrequency("alice", 4, 1, 444444.44, false),
+                new WordFrequency("the", 3, 1, 333333.33, true),
+                new WordFrequency("hello", 2, 1, 222222.22, false)
             },
             new[]
             {
@@ -159,18 +160,89 @@ public sealed class SqliteCorpusStoreTests
         IReadOnlyList<StoredSentenceCategoryStatistic> categories = await store.ListSentenceCategoryStatisticsAsync(run.Id);
 
         StoredWordStatistic alice = Assert.Single(words, word => word.Word == "alice");
+        StoredWordStatistic the = Assert.Single(words, word => word.Word == "the");
+        StoredWordStatistic? aliceDetail = await store.GetWordStatisticAsync(run.Id, "ALICE");
+        StoredWordStatistic? missingDetail = await store.GetWordStatisticAsync(run.Id, "missing");
+        IReadOnlyList<StoredWordStatistic> contentWords = await store.ListTopWordsAsync(run.Id, filter: StoredWordFilter.ContentOnly);
+        IReadOnlyList<StoredWordStatistic> functionWords = await store.ListTopWordsAsync(run.Id, filter: StoredWordFilter.FunctionOnly);
+
         Assert.Equal(4, alice.Count);
+        Assert.False(alice.IsStopWord);
+        Assert.True(the.IsStopWord);
+        Assert.NotNull(aliceDetail);
+        Assert.Equal(alice.Id, aliceDetail!.Id);
+        Assert.Null(missingDetail);
+        Assert.DoesNotContain(contentWords, word => word.IsStopWord);
+        Assert.All(functionWords, word => Assert.True(word.IsStopWord));
 
         StoredNGramStatistic helloAlice = Assert.Single(ngrams, ngram => ngram.Text == "hello alice");
         Assert.Equal(2, helloAlice.N);
         Assert.Equal(2, helloAlice.Count);
 
         StoredNextWordStatistic nextWord = Assert.Single(nextWords, item => item.Word == "hello" && item.NextWord == "alice");
+        IReadOnlyList<StoredNextWordStatistic> previousWords = await store.ListPreviousWordsAsync(run.Id, "alice");
+
         Assert.Equal(1.0, nextWord.Probability, precision: 6);
+        Assert.Contains(previousWords, item => item.Word == "hello" && item.NextWord == "alice");
+        Assert.Contains(previousWords, item => item.Word == "dear" && item.NextWord == "alice");
 
         Assert.Contains(categories, category => category.Category == PhraseCategory.Greeting && category.Count == 1);
         Assert.Contains(categories, category => category.Category == PhraseCategory.Question && category.Count == 1);
         Assert.Contains(categories, category => category.Category == PhraseCategory.Statement && category.Count == 1);
+    }
+
+
+    [Fact]
+    public async Task ListWordContextsAsync_ShouldReturnKwicContextsFromStoredChapters()
+    {
+        using TestDatabase database = new();
+        string sourceFile = database.CreateSourceFile("alice.epub", "fake epub content");
+        SqliteCorpusStore store = new(database.Path);
+        StoredCorpus corpus = await store.CreateCorpusAsync("English Literature", "en");
+
+        ImportedBook book = new(
+            "book-1",
+            "Alice",
+            "Lewis Carroll",
+            "en",
+            sourceFile,
+            new[]
+            {
+                new ImportedChapter(1, "Chapter I", "chapter1.xhtml", string.Empty, "Hello, Alice. Alice looked at the rabbit. The rabbit saw Alice again."),
+                new ImportedChapter(2, "Chapter II", "chapter2.xhtml", string.Empty, "No Alice here? Yes, Alice is here.")
+            });
+
+        StoredBookImport storedImport = await store.SaveImportedBookAsync(corpus.Id, book);
+        CorpusAnalysisResult analysis = new(
+            new CorpusSummary(1, 5, 20, 16, 8, 4.0, 4.2),
+            Array.Empty<WordFrequency>(),
+            Array.Empty<NGramFrequency>(),
+            Array.Empty<NextWordFrequency>(),
+            Array.Empty<AnalyzedSentence>());
+
+        StoredAnalysisRun run = await store.SaveAnalysisRunAsync(
+            corpus.Id,
+            storedImport.Book.Id,
+            new AnalysisSettings(),
+            analysis,
+            "report.md",
+            "words.csv",
+            "ngrams.csv",
+            "next_words.csv",
+            "extracted_text.txt");
+
+        IReadOnlyList<StoredWordContext> contexts = await store.ListWordContextsAsync(run.Id, "ALICE", limit: 3, contextWords: 2);
+        IReadOnlyList<StoredWordContext> limitedContexts = await store.ListWordContextsAsync(run.Id, "alice", limit: 1, contextWords: 2);
+        IReadOnlyList<StoredWordContext> missingContexts = await store.ListWordContextsAsync(run.Id, "missing", limit: 3, contextWords: 2);
+
+        Assert.Equal(3, contexts.Count);
+        Assert.Single(limitedContexts);
+        Assert.Empty(missingContexts);
+        Assert.Equal("Alice", contexts[0].MatchText);
+        Assert.Equal("Chapter I", contexts[0].ChapterTitle);
+        Assert.Contains("Hello", contexts[0].LeftContext);
+        Assert.Contains("Alice looked", contexts[0].RightContext);
+        Assert.All(contexts, context => Assert.Equal(run.Id, context.AnalysisRunId));
     }
 
 

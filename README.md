@@ -206,3 +206,35 @@ dotnet run --project src/CorpusLens.Cli -- stats summary 1 --db ./data/corpuslen
 The stats CLI now formats decimal values with two decimals, so large frequency tables are easier to read.
 
 Details: `docs/milestone-4-1-run-navigation.md`.
+
+
+## Stopword e parole contenuto
+
+CorpusLens non elimina le stopword. Le classifica come parole funzionali, così puoi vedere sia le frequenze complete sia il lessico più informativo del corpus.
+
+```powershell
+make stats-words RUN=1 LIMIT=25
+make stats-content RUN=1 LIMIT=25
+make stats-function RUN=1 LIMIT=25
+```
+
+La colonna `Type` della CLI distingue `content` e `function`. Nel CSV `words.csv` viene esportata anche la colonna `is_stop_word`.
+
+
+## Word detail lookup
+
+After saving an analysis run to SQLite, inspect one word with its main statistics, following words and previous words:
+
+```powershell
+make stats-word RUN=1 WORD=alice LIMIT=25
+make stats-kwic RUN=1 WORD=alice LIMIT=10 CONTEXT=8
+```
+
+Equivalent CLI command:
+
+```powershell
+dotnet run --project src/CorpusLens.Cli -- stats word 1 alice --limit 25 --db ./data/corpuslens.db
+dotnet run --project src/CorpusLens.Cli -- stats kwic 1 alice --limit 10 --context 8 --db ./data/corpuslens.db
+```
+
+These commands do not recompute the analysis. They read the already persisted statistics and clean chapter text from SQLite.

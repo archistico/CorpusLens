@@ -8,4 +8,5 @@ public sealed record StoredWordStatistic(
     string Word,
     int Count,
     int DocumentCount,
-    double FrequencyPerMillion);
+    double FrequencyPerMillion,
+    bool IsStopWord);

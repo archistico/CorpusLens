@@ -1,6 +1,7 @@
 using CorpusLens.Analysis.Classification;
 using CorpusLens.Analysis.Normalization;
 using CorpusLens.Analysis.Sentences;
+using CorpusLens.Analysis.StopWords;
 using CorpusLens.Analysis.Tokens;
 using CorpusLens.Domain.Analysis;
 using CorpusLens.Domain.Text;
@@ -113,6 +114,11 @@ public sealed class CorpusAnalyzer
         int totalWordCount)
     {
         Dictionary<string, WordAccumulator> accumulators = new(StringComparer.Ordinal);
+        IReadOnlyList<string> languageCodes = documents
+            .Select(document => document.Document.LanguageCode)
+            .Where(languageCode => !string.IsNullOrWhiteSpace(languageCode))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
 
         foreach (DocumentAnalysis document in documents)
         {
@@ -140,7 +146,8 @@ public sealed class CorpusAnalyzer
                 accumulator.Word,
                 accumulator.Count,
                 accumulator.DocumentCount,
-                PerMillion(accumulator.Count, totalWordCount)))
+                PerMillion(accumulator.Count, totalWordCount),
+                StopWordProvider.IsStopWord(accumulator.Word, languageCodes)))
             .OrderByDescending(word => word.Count)
             .ThenBy(word => word.Word, StringComparer.Ordinal)
             .ToArray();

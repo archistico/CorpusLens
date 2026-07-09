@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using CorpusLens.Domain.Analysis;
 using CorpusLens.Domain.Books;
 using CorpusLens.Domain.Storage;
@@ -11,9 +12,15 @@ namespace CorpusLens.Infrastructure.Storage;
 
 public sealed class SqliteCorpusStore
 {
-    private const string EngineVersion = "0.4";
+    private const string EngineVersion = "0.5";
 
     private static readonly byte[] DirectoryHashSeparator = { 0 };
+
+    private static readonly Regex WordContextTokenRegex = new(
+        @"[\p{L}\p{M}]+(?:['\-][\p{L}\p{M}]+)*",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    private static readonly Regex ContextWhitespaceRegex = new(@"\s+", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     private readonly string _databasePath;
 
@@ -37,6 +44,17 @@ public sealed class SqliteCorpusStore
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await EnableForeignKeysAsync(connection, cancellationToken).ConfigureAwait(false);
         await ExecuteNonQueryAsync(connection, SchemaSql, cancellationToken).ConfigureAwait(false);
+        await EnsureWordStatisticIsStopWordColumnAsync(connection, cancellationToken).ConfigureAwait(false);
+        await ExecuteNonQueryAsync(
+            connection,
+            "CREATE INDEX IF NOT EXISTS IX_WordStatistic_AnalysisRunId_IsStopWord_Count ON WordStatistic (AnalysisRunId, IsStopWord, Count DESC);",
+            cancellationToken)
+            .ConfigureAwait(false);
+        await ExecuteNonQueryAsync(
+            connection,
+            "CREATE INDEX IF NOT EXISTS IX_NextWordStatistic_AnalysisRunId_NextWord_Count ON NextWordStatistic (AnalysisRunId, NextWord, Count DESC);",
+            cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public async Task<StoredCorpus> CreateCorpusAsync(
@@ -490,6 +508,7 @@ public sealed class SqliteCorpusStore
     public async Task<IReadOnlyList<StoredWordStatistic>> ListTopWordsAsync(
         long analysisRunId,
         int limit = 50,
+        StoredWordFilter filter = StoredWordFilter.All,
         CancellationToken cancellationToken = default)
     {
         await InitializeAsync(cancellationToken).ConfigureAwait(false);
@@ -501,13 +520,30 @@ public sealed class SqliteCorpusStore
         await EnableForeignKeysAsync(connection, cancellationToken).ConfigureAwait(false);
 
         await using SqliteCommand command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT Id, AnalysisRunId, CorpusId, BookId, Word, Count, DocumentCount, FrequencyPerMillion
-            FROM WordStatistic
-            WHERE AnalysisRunId = $analysisRunId
-            ORDER BY Count DESC, Word COLLATE NOCASE
-            LIMIT $limit;
-            """;
+        command.CommandText = filter switch
+        {
+            StoredWordFilter.ContentOnly => """
+                SELECT Id, AnalysisRunId, CorpusId, BookId, Word, Count, DocumentCount, FrequencyPerMillion, IsStopWord
+                FROM WordStatistic
+                WHERE AnalysisRunId = $analysisRunId AND IsStopWord = 0
+                ORDER BY Count DESC, Word COLLATE NOCASE
+                LIMIT $limit;
+                """,
+            StoredWordFilter.FunctionOnly => """
+                SELECT Id, AnalysisRunId, CorpusId, BookId, Word, Count, DocumentCount, FrequencyPerMillion, IsStopWord
+                FROM WordStatistic
+                WHERE AnalysisRunId = $analysisRunId AND IsStopWord = 1
+                ORDER BY Count DESC, Word COLLATE NOCASE
+                LIMIT $limit;
+                """,
+            _ => """
+                SELECT Id, AnalysisRunId, CorpusId, BookId, Word, Count, DocumentCount, FrequencyPerMillion, IsStopWord
+                FROM WordStatistic
+                WHERE AnalysisRunId = $analysisRunId
+                ORDER BY Count DESC, Word COLLATE NOCASE
+                LIMIT $limit;
+                """
+        };
         AddParameter(command, "$analysisRunId", analysisRunId);
         AddParameter(command, "$limit", safeLimit);
 
@@ -518,6 +554,37 @@ public sealed class SqliteCorpusStore
         }
 
         return words;
+    }
+
+    public async Task<StoredWordStatistic?> GetWordStatisticAsync(
+        long analysisRunId,
+        string word,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(word);
+        await InitializeAsync(cancellationToken).ConfigureAwait(false);
+
+        await using SqliteConnection connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await EnableForeignKeysAsync(connection, cancellationToken).ConfigureAwait(false);
+
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Id, AnalysisRunId, CorpusId, BookId, Word, Count, DocumentCount, FrequencyPerMillion, IsStopWord
+            FROM WordStatistic
+            WHERE AnalysisRunId = $analysisRunId AND Word = $word COLLATE NOCASE
+            LIMIT 1;
+            """;
+        AddParameter(command, "$analysisRunId", analysisRunId);
+        AddParameter(command, "$word", word.Trim());
+
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        return ReadWordStatistic(reader);
     }
 
     public async Task<IReadOnlyList<StoredNGramStatistic>> ListTopNGramsAsync(
@@ -618,6 +685,88 @@ public sealed class SqliteCorpusStore
         return nextWords;
     }
 
+    public async Task<IReadOnlyList<StoredNextWordStatistic>> ListPreviousWordsAsync(
+        long analysisRunId,
+        string word,
+        int limit = 50,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(word);
+        await InitializeAsync(cancellationToken).ConfigureAwait(false);
+        int safeLimit = NormalizeLimit(limit);
+        List<StoredNextWordStatistic> previousWords = new();
+
+        await using SqliteConnection connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await EnableForeignKeysAsync(connection, cancellationToken).ConfigureAwait(false);
+
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Id, AnalysisRunId, CorpusId, BookId, Word, NextWord, Count, Probability
+            FROM NextWordStatistic
+            WHERE AnalysisRunId = $analysisRunId AND NextWord = $word COLLATE NOCASE
+            ORDER BY Count DESC, Word COLLATE NOCASE
+            LIMIT $limit;
+            """;
+        AddParameter(command, "$analysisRunId", analysisRunId);
+        AddParameter(command, "$word", word.Trim());
+        AddParameter(command, "$limit", safeLimit);
+
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            previousWords.Add(ReadNextWordStatistic(reader));
+        }
+
+        return previousWords;
+    }
+
+    public async Task<IReadOnlyList<StoredWordContext>> ListWordContextsAsync(
+        long analysisRunId,
+        string word,
+        int limit = 25,
+        int contextWords = 8,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(word);
+
+        StoredAnalysisRunSummary? run = await GetAnalysisRunSummaryAsync(analysisRunId, cancellationToken)
+            .ConfigureAwait(false);
+        if (run is null)
+        {
+            return Array.Empty<StoredWordContext>();
+        }
+
+        int safeLimit = NormalizeLimit(limit);
+        int safeContextWords = Math.Clamp(contextWords, 1, 30);
+        string normalizedWord = NormalizeContextWord(word);
+        IReadOnlyList<StoredChapter> chapters = await ListChaptersAsync(run.BookId, cancellationToken)
+            .ConfigureAwait(false);
+
+        List<StoredWordContext> contexts = new();
+        foreach (StoredChapter chapter in chapters)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            AddWordContextsFromChapter(
+                analysisRunId,
+                run.BookId,
+                chapter,
+                normalizedWord,
+                safeLimit,
+                safeContextWords,
+                contexts);
+
+            if (contexts.Count >= safeLimit)
+            {
+                break;
+            }
+        }
+
+        return contexts;
+    }
+
+
     public async Task<IReadOnlyList<StoredSentenceCategoryStatistic>> ListSentenceCategoryStatisticsAsync(
         long analysisRunId,
         CancellationToken cancellationToken = default)
@@ -662,9 +811,9 @@ public sealed class SqliteCorpusStore
             command.Transaction = transaction;
             command.CommandText = """
                 INSERT INTO WordStatistic
-                    (AnalysisRunId, CorpusId, BookId, Word, Count, DocumentCount, FrequencyPerMillion)
+                    (AnalysisRunId, CorpusId, BookId, Word, Count, DocumentCount, FrequencyPerMillion, IsStopWord)
                 VALUES
-                    ($analysisRunId, $corpusId, $bookId, $word, $count, $documentCount, $frequencyPerMillion);
+                    ($analysisRunId, $corpusId, $bookId, $word, $count, $documentCount, $frequencyPerMillion, $isStopWord);
                 """;
             AddParameter(command, "$analysisRunId", analysisRunId);
             AddParameter(command, "$corpusId", corpusId);
@@ -673,6 +822,7 @@ public sealed class SqliteCorpusStore
             AddParameter(command, "$count", word.Count);
             AddParameter(command, "$documentCount", word.DocumentCount);
             AddParameter(command, "$frequencyPerMillion", word.FrequencyPerMillion);
+            AddParameter(command, "$isStopWord", word.IsStopWord ? 1 : 0);
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
     }
@@ -776,6 +926,114 @@ public sealed class SqliteCorpusStore
         }
     }
 
+
+    private static void AddWordContextsFromChapter(
+        long analysisRunId,
+        long bookId,
+        StoredChapter chapter,
+        string normalizedWord,
+        int limit,
+        int contextWords,
+        List<StoredWordContext> contexts)
+    {
+        MatchCollection matches = WordContextTokenRegex.Matches(chapter.CleanText);
+        if (matches.Count == 0)
+        {
+            return;
+        }
+
+        List<WordContextToken> tokens = new(matches.Count);
+        foreach (Match match in matches)
+        {
+            tokens.Add(new WordContextToken(
+                match.Index,
+                match.Index + match.Length,
+                match.Value,
+                NormalizeContextWord(match.Value)));
+        }
+
+        int occurrenceIndex = 0;
+        for (int tokenIndex = 0; tokenIndex < tokens.Count && contexts.Count < limit; tokenIndex++)
+        {
+            WordContextToken token = tokens[tokenIndex];
+            if (!string.Equals(token.NormalizedText, normalizedWord, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            occurrenceIndex++;
+            int startTokenIndex = Math.Max(0, tokenIndex - contextWords);
+            int endTokenIndex = Math.Min(tokens.Count - 1, tokenIndex + contextWords);
+            int contextStart = tokens[startTokenIndex].StartOffset;
+            int contextEnd = tokens[endTokenIndex].EndOffset;
+
+            string leftContext = NormalizeContextSnippet(chapter.CleanText[contextStart..token.StartOffset]);
+            string rightContext = NormalizeContextSnippet(chapter.CleanText[token.EndOffset..contextEnd]);
+
+            contexts.Add(new StoredWordContext(
+                analysisRunId,
+                bookId,
+                chapter.Id,
+                chapter.OrderIndex,
+                chapter.Title,
+                token.Text,
+                leftContext,
+                rightContext,
+                occurrenceIndex,
+                token.StartOffset));
+        }
+    }
+
+    private static string NormalizeContextWord(string word)
+    {
+        return word
+            .Trim()
+            .Replace('’', '\'')
+            .Replace('‘', '\'')
+            .Replace('‐', '-')
+            .Replace('‑', '-')
+            .Replace('–', '-')
+            .Replace('—', '-')
+            .ToLowerInvariant();
+    }
+
+    private static string NormalizeContextSnippet(string text)
+    {
+        return ContextWhitespaceRegex.Replace(text, " ").Trim();
+    }
+
+
+    private static async Task EnsureWordStatisticIsStopWordColumnAsync(
+        SqliteConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using SqliteCommand pragmaCommand = connection.CreateCommand();
+        pragmaCommand.CommandText = "PRAGMA table_info(WordStatistic);";
+
+        bool hasColumn = false;
+        await using (SqliteDataReader reader = await pragmaCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
+        {
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                string columnName = reader.GetString(1);
+                if (string.Equals(columnName, "IsStopWord", StringComparison.OrdinalIgnoreCase))
+                {
+                    hasColumn = true;
+                    break;
+                }
+            }
+        }
+
+        if (hasColumn)
+        {
+            return;
+        }
+
+        await using SqliteCommand alterCommand = connection.CreateCommand();
+        alterCommand.CommandText = "ALTER TABLE WordStatistic ADD COLUMN IsStopWord INTEGER NOT NULL DEFAULT 0;";
+        await alterCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     private SqliteConnection CreateConnection()
     {
         SqliteConnectionStringBuilder builder = new()
@@ -867,7 +1125,8 @@ public sealed class SqliteCorpusStore
             reader.GetString(4),
             reader.GetInt32(5),
             reader.GetInt32(6),
-            reader.GetDouble(7));
+            reader.GetDouble(7),
+            reader.GetInt32(8) != 0);
     }
 
     private static StoredNGramStatistic ReadNGramStatistic(SqliteDataReader reader)
@@ -985,6 +1244,13 @@ public sealed class SqliteCorpusStore
         return builder.ToString();
     }
 
+    private sealed record WordContextToken(
+        int StartOffset,
+        int EndOffset,
+        string Text,
+        string NormalizedText);
+
+
     private const string SchemaSql = """
         CREATE TABLE IF NOT EXISTS Corpus
         (
@@ -1067,6 +1333,7 @@ public sealed class SqliteCorpusStore
             Count INTEGER NOT NULL,
             DocumentCount INTEGER NOT NULL,
             FrequencyPerMillion REAL NOT NULL,
+            IsStopWord INTEGER NOT NULL DEFAULT 0,
             FOREIGN KEY (AnalysisRunId) REFERENCES AnalysisRun(Id) ON DELETE CASCADE,
             FOREIGN KEY (CorpusId) REFERENCES Corpus(Id) ON DELETE CASCADE,
             FOREIGN KEY (BookId) REFERENCES Book(Id) ON DELETE CASCADE
@@ -1111,6 +1378,7 @@ public sealed class SqliteCorpusStore
 
         CREATE INDEX IF NOT EXISTS IX_NextWordStatistic_AnalysisRunId_Count ON NextWordStatistic (AnalysisRunId, Count DESC);
         CREATE INDEX IF NOT EXISTS IX_NextWordStatistic_AnalysisRunId_Word_Count ON NextWordStatistic (AnalysisRunId, Word, Count DESC);
+        CREATE INDEX IF NOT EXISTS IX_NextWordStatistic_AnalysisRunId_NextWord_Count ON NextWordStatistic (AnalysisRunId, NextWord, Count DESC);
 
         CREATE TABLE IF NOT EXISTS SentenceCategoryStatistic
         (

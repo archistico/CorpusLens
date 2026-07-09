@@ -172,6 +172,8 @@ public static class Program
             "runs" => await PrintAnalysisRunsAsync(subCommandArgs).ConfigureAwait(false),
             "summary" => await PrintAnalysisRunSummaryAsync(subCommandArgs).ConfigureAwait(false),
             "words" => await PrintTopWordsAsync(subCommandArgs).ConfigureAwait(false),
+            "word" => await PrintWordDetailAsync(subCommandArgs).ConfigureAwait(false),
+            "kwic" => await PrintWordContextsAsync(subCommandArgs).ConfigureAwait(false),
             "ngrams" => await PrintTopNGramsAsync(subCommandArgs).ConfigureAwait(false),
             "next" => await PrintTopNextWordsAsync(subCommandArgs).ConfigureAwait(false),
             "categories" => await PrintSentenceCategoriesAsync(subCommandArgs).ConfigureAwait(false),
@@ -249,20 +251,131 @@ public static class Program
         }
 
         CommandLineOptions options = CommandLineOptions.Parse(args.Skip(1).ToArray());
+        StoredWordFilter filter = ReadWordFilter(options);
         SqliteCorpusStore store = new(options.Get("db", DefaultDatabasePath()));
         IReadOnlyList<StoredWordStatistic> words = await store
-            .ListTopWordsAsync(analysisRunId, ReadLimit(options))
+            .ListTopWordsAsync(analysisRunId, ReadLimit(options), filter)
             .ConfigureAwait(false);
 
-        Console.WriteLine("Word                 Count  Documents  Per million");
-        Console.WriteLine("-------------------  -----  ---------  -----------");
+        Console.WriteLine("Word                 Count  Documents  Per million  Type");
+        Console.WriteLine("-------------------  -----  ---------  -----------  --------");
         foreach (StoredWordStatistic word in words)
         {
-            Console.WriteLine($"{TrimForColumn(word.Word, 19),-19}  {word.Count,5}  {word.DocumentCount,9}  {FormatDouble(word.FrequencyPerMillion),11}");
+            Console.WriteLine($"{TrimForColumn(word.Word, 19),-19}  {word.Count,5}  {word.DocumentCount,9}  {FormatDouble(word.FrequencyPerMillion),11}  {WordTypeLabel(word),-8}");
         }
 
         return 0;
     }
+
+    private static async Task<int> PrintWordDetailAsync(string[] args)
+    {
+        if (!TryReadRunId(args, out long analysisRunId) || args.Length < 2)
+        {
+            Console.Error.WriteLine("Usage: stats word <runId> <word> [--limit <n>] [--db <file>]");
+            return 1;
+        }
+
+        string wordText = args[1];
+        CommandLineOptions options = CommandLineOptions.Parse(args.Skip(2).ToArray());
+        int limit = ReadLimit(options);
+        SqliteCorpusStore store = new(options.Get("db", DefaultDatabasePath()));
+
+        StoredWordStatistic? word = await store
+            .GetWordStatisticAsync(analysisRunId, wordText)
+            .ConfigureAwait(false);
+
+        if (word is null)
+        {
+            Console.Error.WriteLine($"Word '{wordText}' was not found in analysis run {analysisRunId}.");
+            return 1;
+        }
+
+        IReadOnlyList<StoredNextWordStatistic> nextWords = await store
+            .ListTopNextWordsAsync(analysisRunId, word.Word, limit)
+            .ConfigureAwait(false);
+        IReadOnlyList<StoredNextWordStatistic> previousWords = await store
+            .ListPreviousWordsAsync(analysisRunId, word.Word, limit)
+            .ConfigureAwait(false);
+
+        Console.WriteLine($"Word:          {word.Word}");
+        Console.WriteLine($"Type:          {WordTypeLabel(word)}");
+        Console.WriteLine($"Count:         {word.Count}");
+        Console.WriteLine($"Documents:     {word.DocumentCount}");
+        Console.WriteLine($"Per million:   {FormatDouble(word.FrequencyPerMillion)}");
+        Console.WriteLine();
+
+        Console.WriteLine("Next words");
+        Console.WriteLine("Next word            Count  Probability");
+        Console.WriteLine("-------------------  -----  -----------");
+        foreach (StoredNextWordStatistic nextWord in nextWords)
+        {
+            Console.WriteLine($"{TrimForColumn(nextWord.NextWord, 19),-19}  {nextWord.Count,5}  {FormatDouble(nextWord.Probability),11}");
+        }
+
+        if (nextWords.Count == 0)
+        {
+            Console.WriteLine("No next-word statistics found.");
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("Previous words");
+        Console.WriteLine("Previous word        Count  Probability");
+        Console.WriteLine("-------------------  -----  -----------");
+        foreach (StoredNextWordStatistic previousWord in previousWords)
+        {
+            Console.WriteLine($"{TrimForColumn(previousWord.Word, 19),-19}  {previousWord.Count,5}  {FormatDouble(previousWord.Probability),11}");
+        }
+
+        if (previousWords.Count == 0)
+        {
+            Console.WriteLine("No previous-word statistics found.");
+        }
+
+        return 0;
+    }
+
+    private static async Task<int> PrintWordContextsAsync(string[] args)
+    {
+        if (!TryReadRunId(args, out long analysisRunId) || args.Length < 2)
+        {
+            Console.Error.WriteLine("Usage: stats kwic <runId> <word> [--limit <n>] [--context <n>] [--db <file>]");
+            return 1;
+        }
+
+        string wordText = args[1];
+        CommandLineOptions options = CommandLineOptions.Parse(args.Skip(2).ToArray());
+        int contextWords = TryReadIntOption(options, "context") ?? 8;
+        SqliteCorpusStore store = new(options.Get("db", DefaultDatabasePath()));
+
+        IReadOnlyList<StoredWordContext> contexts = await store
+            .ListWordContextsAsync(analysisRunId, wordText, ReadLimit(options), contextWords)
+            .ConfigureAwait(false);
+
+        Console.WriteLine($"KWIC contexts for '{wordText}' in run {analysisRunId}");
+        Console.WriteLine($"Context words per side: {Math.Clamp(contextWords, 1, 30)}");
+        Console.WriteLine();
+        Console.WriteLine("#    Chapter                         Left context                         Match           Right context");
+        Console.WriteLine("---  ------------------------------  -----------------------------------  --------------  -----------------------------------");
+
+        for (int index = 0; index < contexts.Count; index++)
+        {
+            StoredWordContext context = contexts[index];
+            string chapter = string.IsNullOrWhiteSpace(context.ChapterTitle)
+                ? $"Chapter {context.ChapterOrderIndex}"
+                : context.ChapterTitle;
+
+            Console.WriteLine(
+                $"{index + 1,3}  {TrimForColumn(chapter, 30),-30}  {TrimForColumn(context.LeftContext, 35),-35}  {TrimForColumn(context.MatchText, 14),-14}  {TrimForColumn(context.RightContext, 35),-35}");
+        }
+
+        if (contexts.Count == 0)
+        {
+            Console.WriteLine("No contexts found.");
+        }
+
+        return 0;
+    }
+
 
     private static async Task<int> PrintTopNGramsAsync(string[] args)
     {
@@ -564,7 +677,9 @@ public static class Program
         Console.WriteLine("  corpus list [--db <file>]");
         Console.WriteLine("  stats runs [--corpus-id <id>] [--limit <n>] [--db <file>]");
         Console.WriteLine("  stats summary <runId> [--db <file>]");
-        Console.WriteLine("  stats words <runId> [--limit <n>] [--db <file>]");
+        Console.WriteLine("  stats words <runId> [--limit <n>] [--content-only] [--function-only] [--db <file>]");
+        Console.WriteLine("  stats word <runId> <word> [--limit <n>] [--db <file>]");
+        Console.WriteLine("  stats kwic <runId> <word> [--limit <n>] [--context <n>] [--db <file>]");
         Console.WriteLine("  stats ngrams <runId> [--n <n>] [--limit <n>] [--db <file>]");
         Console.WriteLine("  stats next <runId> [--word <word>] [--limit <n>] [--db <file>]");
         Console.WriteLine("  stats categories <runId> [--db <file>]");
@@ -593,6 +708,10 @@ public static class Program
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats runs --limit 10");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats summary 1");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats words 1 --limit 25");
+        Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats words 1 --content-only --limit 25");
+        Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats words 1 --function-only --limit 25");
+        Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats word 1 alice --limit 25");
+        Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats kwic 1 alice --limit 10 --context 8");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats ngrams 1 --n 3 --limit 25");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats next 1 --word alice --limit 25");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats categories 1");
@@ -659,6 +778,30 @@ public static class Program
     }
 
 
+
+
+    private static StoredWordFilter ReadWordFilter(CommandLineOptions options)
+    {
+        bool contentOnly = options.Has("content-only");
+        bool functionOnly = options.Has("function-only");
+
+        if (contentOnly && functionOnly)
+        {
+            throw new InvalidOperationException("Use either --content-only or --function-only, not both.");
+        }
+
+        if (contentOnly)
+        {
+            return StoredWordFilter.ContentOnly;
+        }
+
+        return functionOnly ? StoredWordFilter.FunctionOnly : StoredWordFilter.All;
+    }
+
+    private static string WordTypeLabel(StoredWordStatistic word)
+    {
+        return word.IsStopWord ? "function" : "content";
+    }
 
     private static long? TryReadLongOption(CommandLineOptions options, string key)
     {
