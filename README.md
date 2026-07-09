@@ -87,3 +87,9 @@ In questa milestone l'EPUB viene letto con VersOne.Epub, i contenuti HTML/XHTML 
 
 The EPUB import pipeline now removes Project Gutenberg boilerplate when standard START/END markers are present. The Markdown report also sorts the `Next words` preview by descending count, so the section shows the most relevant transitions instead of only the first alphabetical word group.
 
+
+### Milestone 1.1 — Text quality
+
+Questa versione aggiunge una pulizia EPUB più robusta per evitare che front matter, indici duplicati e file di navigazione finiscano nelle statistiche linguistiche.
+
+In particolare, per EPUB Project Gutenberg come Alice, il testo analizzato parte dal vero primo capitolo invece che da titolo, indice e note editoriali.

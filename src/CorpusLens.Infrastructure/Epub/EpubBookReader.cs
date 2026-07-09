@@ -52,7 +52,7 @@ public sealed class EpubBookReader
 
             string rawHtml = textContentFile.Content ?? string.Empty;
             string cleanText = _boilerplateCleaner.Clean(_htmlToTextConverter.Convert(rawHtml));
-            if (string.IsNullOrWhiteSpace(cleanText))
+            if (string.IsNullOrWhiteSpace(cleanText) || _boilerplateCleaner.IsLikelyFrontMatterOnly(cleanText))
             {
                 continue;
             }
