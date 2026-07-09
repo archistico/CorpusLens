@@ -22,6 +22,16 @@ public sealed class SqliteCorpusStore
 
     private static readonly Regex ContextWhitespaceRegex = new(@"\s+", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
+    private static readonly char[] LeftContextTrailingPunctuation =
+    {
+        ',', ';', ':', '.', '!', '?', '…', '"', '\'', '”', '’', '»', ')', ']', '}'
+    };
+
+    private static readonly char[] RightContextLeadingPunctuation =
+    {
+        ',', ';', ':', '.', '!', '?', '…', '"', '\'', '“', '‘', '«', '(', '[', '{'
+    };
+
     private readonly string _databasePath;
 
     public SqliteCorpusStore(string databasePath)
@@ -967,8 +977,8 @@ public sealed class SqliteCorpusStore
             int contextStart = tokens[startTokenIndex].StartOffset;
             int contextEnd = tokens[endTokenIndex].EndOffset;
 
-            string leftContext = NormalizeContextSnippet(chapter.CleanText[contextStart..token.StartOffset]);
-            string rightContext = NormalizeContextSnippet(chapter.CleanText[token.EndOffset..contextEnd]);
+            string leftContext = NormalizeLeftContextSnippet(chapter.CleanText[contextStart..token.StartOffset]);
+            string rightContext = NormalizeRightContextSnippet(chapter.CleanText[token.EndOffset..contextEnd]);
 
             contexts.Add(new StoredWordContext(
                 analysisRunId,
@@ -997,9 +1007,55 @@ public sealed class SqliteCorpusStore
             .ToLowerInvariant();
     }
 
+    private static string NormalizeLeftContextSnippet(string text)
+    {
+        return TrimContextEndBoundary(NormalizeContextSnippet(text));
+    }
+
+    private static string NormalizeRightContextSnippet(string text)
+    {
+        return TrimContextStartBoundary(NormalizeContextSnippet(text));
+    }
+
     private static string NormalizeContextSnippet(string text)
     {
         return ContextWhitespaceRegex.Replace(text, " ").Trim();
+    }
+
+    private static string TrimContextStartBoundary(string text)
+    {
+        string result = text;
+        while (result.Length > 0)
+        {
+            int previousLength = result.Length;
+            result = result.TrimStart();
+            result = result.TrimStart(RightContextLeadingPunctuation);
+
+            if (result.Length == previousLength)
+            {
+                return result;
+            }
+        }
+
+        return result;
+    }
+
+    private static string TrimContextEndBoundary(string text)
+    {
+        string result = text;
+        while (result.Length > 0)
+        {
+            int previousLength = result.Length;
+            result = result.TrimEnd();
+            result = result.TrimEnd(LeftContextTrailingPunctuation);
+
+            if (result.Length == previousLength)
+            {
+                return result;
+            }
+        }
+
+        return result;
     }
 
 

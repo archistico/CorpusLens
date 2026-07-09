@@ -384,3 +384,35 @@ Il sentence splitter gestisce meglio narrativa inglese e dialoghi:
 - titoli come `CHAPTER I.` come unità autonoma.
 
 Dettagli: `docs/milestone-8-sentence-splitter.md`.
+
+## Milestone 8.1 — CLI output polish
+
+Questa micro-milestone migliora solo la leggibilità dell'output CLI.
+
+Le probabilità nelle viste `stats word` e `stats next` sono ora stampate come percentuali con due decimali, per evitare valori apparentemente pari a `0` quando la probabilità è piccola.
+
+Esempio:
+
+```text
+0.48%
+```
+
+Il KWIC rimuove inoltre la punteggiatura ai bordi dei contesti sinistro/destro. Per esempio, un caso come:
+
+```text
+said: “I have a view”
+```
+
+viene mostrato come contesto destro:
+
+```text
+I have a view
+```
+
+invece di:
+
+```text
+: “I have a view
+```
+
+Dettagli: `docs/milestone-8-1-cli-output-polish.md`.

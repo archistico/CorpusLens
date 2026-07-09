@@ -296,6 +296,54 @@ public sealed class SqliteCorpusStoreTests
 
 
     [Fact]
+    public async Task ListWordContextsAsync_ShouldTrimPunctuationAroundKwicContexts()
+    {
+        using TestDatabase database = new();
+        string sourceFile = database.CreateSourceFile("view.epub", "fake epub content");
+        SqliteCorpusStore store = new(database.Path);
+        StoredCorpus corpus = await store.CreateCorpusAsync("English Literature", "en");
+
+        ImportedBook book = new(
+            "book-1",
+            "View",
+            "Author",
+            "en",
+            sourceFile,
+            new[]
+            {
+                new ImportedChapter(1, "Chapter I", "chapter1.xhtml", string.Empty, "The old man said: “I have a view,” and smiled.")
+            });
+
+        StoredBookImport storedImport = await store.SaveImportedBookAsync(corpus.Id, book);
+        CorpusAnalysisResult analysis = new(
+            new CorpusSummary(1, 1, 11, 9, 9, 9.0, 4.2),
+            Array.Empty<WordFrequency>(),
+            Array.Empty<NGramFrequency>(),
+            Array.Empty<NextWordFrequency>(),
+            Array.Empty<AnalyzedSentence>());
+
+        StoredAnalysisRun run = await store.SaveAnalysisRunAsync(
+            corpus.Id,
+            storedImport.Book.Id,
+            new AnalysisSettings(),
+            analysis,
+            "report.md",
+            "words.csv",
+            "ngrams.csv",
+            "next_words.csv",
+            "extracted_text.txt");
+
+        IReadOnlyList<StoredWordContext> contexts = await store.ListWordContextsAsync(run.Id, "said", limit: 1, contextWords: 4);
+
+        StoredWordContext context = Assert.Single(contexts);
+        Assert.Equal("The old man", context.LeftContext);
+        Assert.StartsWith("I have a view", context.RightContext, StringComparison.Ordinal);
+        Assert.False(context.RightContext.StartsWith(":", StringComparison.Ordinal));
+        Assert.False(context.RightContext.StartsWith("“", StringComparison.Ordinal));
+    }
+
+
+    [Fact]
     public async Task ListAnalysisRunsAsync_ShouldReturnSavedRunWithCorpusAndBookTitle()
     {
         using TestDatabase database = new();

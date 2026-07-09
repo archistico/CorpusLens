@@ -377,7 +377,7 @@ public static class Program
         Console.WriteLine("-------------------  -----  -----------");
         foreach (StoredNextWordStatistic nextWord in nextWords)
         {
-            Console.WriteLine($"{TrimForColumn(nextWord.NextWord, 19),-19}  {nextWord.Count,5}  {FormatDouble(nextWord.Probability),11}");
+            Console.WriteLine($"{TrimForColumn(nextWord.NextWord, 19),-19}  {nextWord.Count,5}  {FormatProbability(nextWord.Probability),11}");
         }
 
         if (nextWords.Count == 0)
@@ -391,7 +391,7 @@ public static class Program
         Console.WriteLine("-------------------  -----  -----------");
         foreach (StoredNextWordStatistic previousWord in previousWords)
         {
-            Console.WriteLine($"{TrimForColumn(previousWord.Word, 19),-19}  {previousWord.Count,5}  {FormatDouble(previousWord.Probability),11}");
+            Console.WriteLine($"{TrimForColumn(previousWord.Word, 19),-19}  {previousWord.Count,5}  {FormatProbability(previousWord.Probability),11}");
         }
 
         if (previousWords.Count == 0)
@@ -489,7 +489,7 @@ public static class Program
         Console.WriteLine("-------------------  -------------------  -----  -----------");
         foreach (StoredNextWordStatistic nextWord in nextWords)
         {
-            Console.WriteLine($"{TrimForColumn(nextWord.Word, 19),-19}  {TrimForColumn(nextWord.NextWord, 19),-19}  {nextWord.Count,5}  {FormatDouble(nextWord.Probability),11}");
+            Console.WriteLine($"{TrimForColumn(nextWord.Word, 19),-19}  {TrimForColumn(nextWord.NextWord, 19),-19}  {nextWord.Count,5}  {FormatProbability(nextWord.Probability),11}");
         }
 
         return 0;
@@ -915,6 +915,11 @@ public static class Program
     private static string FormatDouble(double value)
     {
         return value.ToString("0.##", CultureInfo.InvariantCulture);
+    }
+
+    private static string FormatProbability(double value)
+    {
+        return value.ToString("0.00%", CultureInfo.InvariantCulture);
     }
 
     private static string FormatDateTime(DateTimeOffset value)

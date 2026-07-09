@@ -348,6 +348,25 @@ etc.
 
 # Fase 3 — Modello dati più corretto
 
+
+## Milestone 8.1 — CLI output polish
+
+Micro-milestone di rifinitura dopo il sentence splitter migliorato.
+
+Obiettivi:
+
+- stampare le probabilità CLI come percentuali leggibili;
+- evitare valori apparentemente pari a `0` quando la probabilità è piccola;
+- pulire i bordi dei contesti KWIC rimuovendo punteggiatura e virgolette iniziali/finali;
+- non modificare database, analisi o CSV.
+
+Criteri di accettazione:
+
+- `stats word` mostra probabilità come `15.02%`;
+- `stats next` mostra probabilità come percentuale;
+- `stats kwic` non mostra contesti destri che iniziano con `:`, `,`, virgolette o parentesi;
+- i test continuano a passare.
+
 ## Milestone 9 — Database model v2: run aggregate con libri reali
 
 ### Problema attuale
