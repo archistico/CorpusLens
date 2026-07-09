@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\CorpusLens.Analysis\CorpusLens.Analysis.csproj" />
+    <ProjectReference Include="..\CorpusLens.Domain\CorpusLens.Domain.csproj" />
+    <ProjectReference Include="..\CorpusLens.Infrastructure\CorpusLens.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>

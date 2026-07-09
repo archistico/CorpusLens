@@ -1,0 +1,14 @@
+bin/
+obj/
+.vs/
+.vscode/
+TestResults/
+*.user
+*.suo
+*.nupkg
+artifacts/
+exports/
+reports/
+*.db
+*.db-shm
+*.db-wal
