@@ -498,6 +498,77 @@ public sealed class SqliteCorpusStoreTests
         Assert.Equal("Second text.More text.".Length, listedBooks[1].CharacterCount);
     }
 
+
+    [Fact]
+    public async Task ListWordBookDistributionAsync_ShouldCountWordAcrossSourceBooks()
+    {
+        using TestDatabase database = new();
+        string firstFile = database.CreateSourceFile("moby.epub", "first fake epub content");
+        string secondFile = database.CreateSourceFile("pirate.epub", "second fake epub content");
+        string folderPath = database.CreateSourceFolder("books");
+
+        SqliteCorpusStore store = new(database.Path);
+        StoredCorpus corpus = await store.CreateCorpusAsync("English Literature", "en");
+
+        ImportedBook aggregateBook = new(
+            "folder-books",
+            "EPUB folder: books",
+            string.Empty,
+            "en",
+            folderPath,
+            new[]
+            {
+                new ImportedChapter(1, "Moby — Chapter I", "moby.epub::chapter1.xhtml", string.Empty, "whale whale sea"),
+                new ImportedChapter(2, "Pirate — Chapter I", "pirate.epub::chapter1.xhtml", string.Empty, "sea whale")
+            });
+        ImportedBook firstBook = new(
+            "moby",
+            "Moby Dick",
+            "Herman Melville",
+            "en",
+            firstFile,
+            new[] { new ImportedChapter(1, "Chapter I", "chapter1.xhtml", string.Empty, "whale whale sea") });
+        ImportedBook secondBook = new(
+            "pirate",
+            "The Pirate",
+            "Walter Scott",
+            "en",
+            secondFile,
+            new[] { new ImportedChapter(1, "Chapter I", "chapter1.xhtml", string.Empty, "sea whale") });
+
+        StoredBookImport aggregateImport = await store.SaveImportedBookAsync(corpus.Id, aggregateBook);
+        StoredBookImport firstImport = await store.SaveImportedBookAsync(corpus.Id, firstBook);
+        StoredBookImport secondImport = await store.SaveImportedBookAsync(corpus.Id, secondBook);
+        CorpusAnalysisResult analysis = new(
+            new CorpusSummary(2, 2, 5, 5, 2, 2.5, 4.0),
+            Array.Empty<WordFrequency>(),
+            Array.Empty<NGramFrequency>(),
+            Array.Empty<NextWordFrequency>(),
+            Array.Empty<AnalyzedSentence>());
+
+        StoredAnalysisRun run = await store.SaveAnalysisRunAsync(
+            corpus.Id,
+            aggregateImport.Book.Id,
+            new AnalysisSettings(),
+            analysis,
+            "report.md",
+            "words.csv",
+            "ngrams.csv",
+            "next_words.csv",
+            "extracted_text.txt");
+        await store.SaveAnalysisRunBooksAsync(run.Id, new[] { firstImport, secondImport });
+
+        IReadOnlyList<StoredWordBookStatistic> distribution = await store.ListWordBookDistributionAsync(run.Id, "WHALE", limit: 10);
+
+        Assert.Equal(2, distribution.Count);
+        Assert.Equal("Moby Dick", distribution[0].Title);
+        Assert.Equal(2, distribution[0].Count);
+        Assert.Equal(3, distribution[0].WordTokenCount);
+        Assert.Equal(666666.67, distribution[0].FrequencyPerMillion, precision: 2);
+        Assert.Equal("The Pirate", distribution[1].Title);
+        Assert.Equal(1, distribution[1].Count);
+    }
+
     private sealed class TestDatabase : IDisposable
     {
         private readonly string _directoryPath;

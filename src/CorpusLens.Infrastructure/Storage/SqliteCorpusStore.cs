@@ -468,6 +468,94 @@ public sealed class SqliteCorpusStore
         return books;
     }
 
+    public async Task<IReadOnlyList<StoredWordBookStatistic>> ListWordBookDistributionAsync(
+        long analysisRunId,
+        string word,
+        int limit = 50,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(word);
+        await InitializeAsync(cancellationToken).ConfigureAwait(false);
+        int safeLimit = NormalizeLimit(limit);
+        string normalizedWord = NormalizeContextWord(word);
+
+        Dictionary<long, WordBookDistributionAccumulator> accumulators = new();
+
+        await using SqliteConnection connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await EnableForeignKeysAsync(connection, cancellationToken).ConfigureAwait(false);
+
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = """
+            WITH SourceBooks AS
+            (
+                SELECT arb.BookId, arb.OrderIndex
+                FROM AnalysisRunBook arb
+                WHERE arb.AnalysisRunId = $analysisRunId
+
+                UNION ALL
+
+                SELECT ar.BookId, 1 AS OrderIndex
+                FROM AnalysisRun ar
+                WHERE ar.Id = $analysisRunId
+                  AND NOT EXISTS
+                  (
+                      SELECT 1
+                      FROM AnalysisRunBook existing
+                      WHERE existing.AnalysisRunId = $analysisRunId
+                  )
+            )
+            SELECT
+                sb.BookId,
+                sb.OrderIndex,
+                b.Title,
+                b.Author,
+                ch.Id,
+                ch.CleanText,
+                ch.CharacterCount
+            FROM SourceBooks sb
+            INNER JOIN Book b ON b.Id = sb.BookId
+            LEFT JOIN Chapter ch ON ch.BookId = b.Id
+            ORDER BY sb.OrderIndex, ch.OrderIndex;
+            """;
+        AddParameter(command, "$analysisRunId", analysisRunId);
+
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            long bookId = reader.GetInt64(0);
+            if (!accumulators.TryGetValue(bookId, out WordBookDistributionAccumulator? accumulator))
+            {
+                accumulator = new WordBookDistributionAccumulator(
+                    analysisRunId,
+                    bookId,
+                    reader.GetInt32(1),
+                    reader.GetString(2),
+                    reader.GetString(3));
+                accumulators.Add(bookId, accumulator);
+            }
+
+            if (reader.IsDBNull(4))
+            {
+                continue;
+            }
+
+            string cleanText = reader.GetString(5);
+            int characterCount = reader.GetInt32(6);
+            (int wordTokenCount, int matchCount) = CountWordInText(cleanText, normalizedWord);
+            accumulator.AddChapter(characterCount, wordTokenCount, matchCount);
+        }
+
+        return accumulators.Values
+            .Where(item => item.Count > 0)
+            .OrderByDescending(item => item.Count)
+            .ThenBy(item => item.Title, StringComparer.OrdinalIgnoreCase)
+            .Take(safeLimit)
+            .Select(item => item.ToStoredStatistic())
+            .ToArray();
+    }
+
+
     public async Task<IReadOnlyList<StoredChapter>> ListChaptersAsync(
         long bookId,
         CancellationToken cancellationToken = default)
@@ -1124,6 +1212,25 @@ public sealed class SqliteCorpusStore
             .ToLowerInvariant();
     }
 
+    private static (int WordTokenCount, int MatchCount) CountWordInText(string text, string normalizedWord)
+    {
+        int wordTokenCount = 0;
+        int matchCount = 0;
+        MatchCollection matches = WordContextTokenRegex.Matches(text);
+
+        foreach (Match match in matches)
+        {
+            wordTokenCount++;
+            if (string.Equals(NormalizeContextWord(match.Value), normalizedWord, StringComparison.Ordinal))
+            {
+                matchCount++;
+            }
+        }
+
+        return (wordTokenCount, matchCount);
+    }
+
+
     private static string NormalizeLeftContextSnippet(string text)
     {
         return TrimContextEndBoundary(NormalizeContextSnippet(text));
@@ -1422,6 +1529,69 @@ public sealed class SqliteCorpusStore
         int EndOffset,
         string Text,
         string NormalizedText);
+
+
+    private sealed class WordBookDistributionAccumulator
+    {
+        public WordBookDistributionAccumulator(
+            long analysisRunId,
+            long bookId,
+            int orderIndex,
+            string title,
+            string author)
+        {
+            AnalysisRunId = analysisRunId;
+            BookId = bookId;
+            OrderIndex = orderIndex;
+            Title = title;
+            Author = author;
+        }
+
+        public long AnalysisRunId { get; }
+
+        public long BookId { get; }
+
+        public int OrderIndex { get; }
+
+        public string Title { get; }
+
+        public string Author { get; }
+
+        public int ChapterCount { get; private set; }
+
+        public int CharacterCount { get; private set; }
+
+        public int WordTokenCount { get; private set; }
+
+        public int Count { get; private set; }
+
+        public void AddChapter(int characterCount, int wordTokenCount, int count)
+        {
+            ChapterCount++;
+            CharacterCount += characterCount;
+            WordTokenCount += wordTokenCount;
+            Count += count;
+        }
+
+        public StoredWordBookStatistic ToStoredStatistic()
+        {
+            double frequencyPerMillion = WordTokenCount == 0
+                ? 0
+                : Count * 1_000_000.0 / WordTokenCount;
+
+            return new StoredWordBookStatistic(
+                AnalysisRunId,
+                BookId,
+                OrderIndex,
+                Title,
+                Author,
+                ChapterCount,
+                CharacterCount,
+                WordTokenCount,
+                Count,
+                frequencyPerMillion);
+        }
+    }
 
 
     private const string SchemaSql = """

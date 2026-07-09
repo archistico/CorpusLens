@@ -248,6 +248,7 @@ public static class Program
             "runs" => await PrintAnalysisRunsAsync(subCommandArgs).ConfigureAwait(false),
             "summary" => await PrintAnalysisRunSummaryAsync(subCommandArgs).ConfigureAwait(false),
             "books" => await PrintAnalysisRunBooksAsync(subCommandArgs).ConfigureAwait(false),
+            "word-books" => await PrintWordBookDistributionAsync(subCommandArgs).ConfigureAwait(false),
             "words" => await PrintTopWordsAsync(subCommandArgs).ConfigureAwait(false),
             "word" => await PrintWordDetailAsync(subCommandArgs).ConfigureAwait(false),
             "kwic" => await PrintWordContextsAsync(subCommandArgs).ConfigureAwait(false),
@@ -355,6 +356,54 @@ public static class Program
         foreach (StoredAnalysisRunBook book in books)
         {
             Console.WriteLine($"{book.OrderIndex,3}  {TrimForColumn(book.Title, 32),-32}  {TrimForColumn(book.Author, 24),-24}  {book.ChapterCount,8}  {book.CharacterCount,10}");
+        }
+
+        return 0;
+    }
+
+
+    private static async Task<int> PrintWordBookDistributionAsync(string[] args)
+    {
+        if (!TryReadRunId(args, out long analysisRunId) || args.Length < 2)
+        {
+            Console.Error.WriteLine("Usage: stats word-books <runId> <word> [--limit <n>] [--db <file>]");
+            return 1;
+        }
+
+        string wordText = args[1];
+        CommandLineOptions options = CommandLineOptions.Parse(args.Skip(2).ToArray());
+        SqliteCorpusStore store = new(options.Get("db", DefaultDatabasePath()));
+        int displayLimit = ReadLimit(options);
+        IReadOnlyList<StoredWordBookStatistic> allMatchingBooks = await store
+            .ListWordBookDistributionAsync(analysisRunId, wordText, limit: 1000)
+            .ConfigureAwait(false);
+        IReadOnlyList<StoredWordBookStatistic> books = allMatchingBooks.Take(displayLimit).ToArray();
+        IReadOnlyList<StoredAnalysisRunBook> sourceBooks = await store
+            .ListAnalysisRunBooksAsync(analysisRunId)
+            .ConfigureAwait(false);
+        int sourceBookCount = sourceBooks.Count > 0 ? sourceBooks.Count : 1;
+
+        Console.WriteLine($"Word distribution for '{wordText}' in run {analysisRunId}");
+        if (allMatchingBooks.Count == 0)
+        {
+            Console.WriteLine($"Source books:  {sourceBookCount}");
+            Console.WriteLine("Matched books: 0");
+            Console.WriteLine("No matching source books found.");
+            return 0;
+        }
+
+        int totalCount = allMatchingBooks.Sum(book => book.Count);
+        Console.WriteLine($"Source books:  {sourceBookCount}");
+        Console.WriteLine($"Matched books: {allMatchingBooks.Count} ({FormatDouble(allMatchingBooks.Count * 100.0 / sourceBookCount)}%)");
+        Console.WriteLine($"Total count:   {totalCount}");
+        Console.WriteLine($"Shown books:   {books.Count}");
+        Console.WriteLine();
+        Console.WriteLine("#    Book                              Author                    Count  Per million  Word tokens");
+        Console.WriteLine("---  --------------------------------  ------------------------  -----  -----------  -----------");
+        for (int index = 0; index < books.Count; index++)
+        {
+            StoredWordBookStatistic book = books[index];
+            Console.WriteLine($"{index + 1,3}  {TrimForColumn(book.Title, 32),-32}  {TrimForColumn(book.Author, 24),-24}  {book.Count,5}  {FormatDouble(book.FrequencyPerMillion),11}  {book.WordTokenCount,11}");
         }
 
         return 0;
@@ -811,6 +860,7 @@ public static class Program
         Console.WriteLine("  stats runs [--corpus-id <id>] [--limit <n>] [--db <file>]");
         Console.WriteLine("  stats summary <runId> [--db <file>]");
         Console.WriteLine("  stats books <runId> [--db <file>]");
+        Console.WriteLine("  stats word-books <runId> <word> [--limit <n>] [--db <file>]");
         Console.WriteLine("  stats words <runId> [--limit <n>] [--content-only] [--function-only] [--db <file>]");
         Console.WriteLine("  stats word <runId> <word> [--limit <n>] [--db <file>]");
         Console.WriteLine("  stats kwic <runId> <word> [--limit <n>] [--context <n>] [--db <file>]");
@@ -844,6 +894,7 @@ public static class Program
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats runs --limit 10");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats summary 1");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats books 1");
+        Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats word-books 1 alice --limit 25");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats words 1 --limit 25");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats words 1 --content-only --limit 25");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats words 1 --function-only --limit 25");

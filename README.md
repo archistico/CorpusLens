@@ -432,3 +432,22 @@ or directly:
 ```powershell
 dotnet run --project src/CorpusLens.Cli -- stats books 1 --db ./data/corpuslens.db
 ```
+
+
+## Word distribution by source book
+
+For aggregate EPUB-folder runs, inspect where a word occurs across the real source books:
+
+```powershell
+make stats-word-books RUN=1 WORD="whale" LIMIT=30
+make stats-word-books RUN=1 WORD="alice" LIMIT=30
+make stats-word-books RUN=1 WORD="don't" LIMIT=30
+```
+
+Equivalent raw command:
+
+```powershell
+dotnet run --project src/CorpusLens.Cli -- stats word-books 1 "whale" --limit 30 --db ./data/corpuslens.db
+```
+
+This reads stored clean chapter text and shows only books where the word appears. Details: `docs/milestone-10-word-book-distribution.md`.

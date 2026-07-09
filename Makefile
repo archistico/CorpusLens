@@ -10,6 +10,7 @@
 #   make stats-content RUN=1 LIMIT=25
 #   make stats-function RUN=1 LIMIT=25
 #   make stats-word RUN=1 WORD=alice LIMIT=25
+#   make stats-word-books RUN=1 WORD=alice LIMIT=25
 #   make stats-kwic RUN=1 WORD=alice LIMIT=10 CONTEXT=8
 #   make inspect-run RUN=1
 
@@ -35,7 +36,7 @@ N ?= 3
 CONTEXT ?= 8
 DIAGNOSTICS_OUT ?= ./artifacts/diagnostics/import_diagnostics.md
 
-.PHONY: restore build test check demo clean clean-data clean-artifacts setup-books corpus-create corpus-create-en corpus-create-it corpus-list analyze-text analyze-book analyze-books analyze-books-recursive analyze-en analyze-it analyze-en-recursive analyze-it-recursive stats-runs stats-summary stats-books stats-words stats-content stats-function stats-word stats-kwic stats-ngrams stats-trigrams stats-next stats-categories inspect-run
+.PHONY: restore build test check demo clean clean-data clean-artifacts setup-books corpus-create corpus-create-en corpus-create-it corpus-list analyze-text analyze-book analyze-books analyze-books-recursive analyze-en analyze-it analyze-en-recursive analyze-it-recursive stats-runs stats-summary stats-books stats-words stats-content stats-function stats-word stats-word-books stats-kwic stats-ngrams stats-trigrams stats-next stats-categories inspect-run
 
 restore:
 	$(DOTNET) restore
@@ -119,6 +120,9 @@ stats-function:
 
 stats-word:
 	$(DOTNET) run --project $(PROJECT) -- stats word $(RUN) "$(WORD)" --limit $(LIMIT) --db $(DB)
+
+stats-word-books:
+	$(DOTNET) run --project $(PROJECT) -- stats word-books $(RUN) "$(WORD)" --limit $(LIMIT) --db $(DB)
 
 stats-kwic:
 	$(DOTNET) run --project $(PROJECT) -- stats kwic $(RUN) "$(WORD)" --limit $(LIMIT) --context $(CONTEXT) --db $(DB)

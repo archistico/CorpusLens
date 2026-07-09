@@ -1203,3 +1203,7 @@ Dopo il primo giro di diagnostica sul corpus italiano, la pulizia metadata è st
 ### Milestone 9 note
 
 Aggiunto collegamento `AnalysisRunBook` tra run aggregate e libri EPUB reali. Nuovo comando: `stats books <runId>`.
+
+### Milestone 10 note
+
+Aggiunto comando `stats word-books <runId> <word>` / `make stats-word-books` per vedere la distribuzione di una parola sui libri reali collegati a una run aggregata. La query usa i capitoli puliti già salvati nel DB; il token index persistente resta previsto per una milestone successiva.
