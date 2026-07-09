@@ -6,7 +6,7 @@ namespace CorpusLens.Analysis.Tokens;
 public sealed class Tokenizer
 {
     private static readonly Regex TokenRegex = new(
-        @"(?<word>[\p{L}\p{M}]+(?:['\-][\p{L}\p{M}]+)*)|(?<number>\p{N}+(?:[\.,]\p{N}+)*)|(?<punct>[\p{P}])|(?<symbol>[\p{S}])|(?<other>\S)",
+        @"(?<word>[\p{L}\p{M}]+(?:['’‘\-‐‑–—][\p{L}\p{M}]+)*)|(?<number>\p{N}+(?:[\.,]\p{N}+)*)|(?<punct>[\p{P}])|(?<symbol>[\p{S}])|(?<other>\S)",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     public IReadOnlyList<TextToken> Tokenize(TextSentence sentence)

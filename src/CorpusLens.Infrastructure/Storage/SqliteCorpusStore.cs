@@ -17,7 +17,7 @@ public sealed class SqliteCorpusStore
     private static readonly byte[] DirectoryHashSeparator = { 0 };
 
     private static readonly Regex WordContextTokenRegex = new(
-        @"[\p{L}\p{M}]+(?:['\-][\p{L}\p{M}]+)*",
+        @"[\p{L}\p{M}]+(?:['’‘\-‐‑–—][\p{L}\p{M}]+)*",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     private static readonly Regex ContextWhitespaceRegex = new(@"\s+", RegexOptions.Compiled | RegexOptions.CultureInvariant);

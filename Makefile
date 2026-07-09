@@ -115,10 +115,10 @@ stats-function:
 	$(DOTNET) run --project $(PROJECT) -- stats words $(RUN) --function-only --limit $(LIMIT) --db $(DB)
 
 stats-word:
-	$(DOTNET) run --project $(PROJECT) -- stats word $(RUN) $(WORD) --limit $(LIMIT) --db $(DB)
+	$(DOTNET) run --project $(PROJECT) -- stats word $(RUN) "$(WORD)" --limit $(LIMIT) --db $(DB)
 
 stats-kwic:
-	$(DOTNET) run --project $(PROJECT) -- stats kwic $(RUN) $(WORD) --limit $(LIMIT) --context $(CONTEXT) --db $(DB)
+	$(DOTNET) run --project $(PROJECT) -- stats kwic $(RUN) "$(WORD)" --limit $(LIMIT) --context $(CONTEXT) --db $(DB)
 
 stats-ngrams:
 	$(DOTNET) run --project $(PROJECT) -- stats ngrams $(RUN) --limit $(LIMIT) --db $(DB)
@@ -127,7 +127,7 @@ stats-trigrams:
 	$(DOTNET) run --project $(PROJECT) -- stats ngrams $(RUN) --n $(N) --limit $(LIMIT) --db $(DB)
 
 stats-next:
-	$(DOTNET) run --project $(PROJECT) -- stats next $(RUN) --word $(WORD) --limit $(LIMIT) --db $(DB)
+	$(DOTNET) run --project $(PROJECT) -- stats next $(RUN) --word "$(WORD)" --limit $(LIMIT) --db $(DB)
 
 stats-categories:
 	$(DOTNET) run --project $(PROJECT) -- stats categories $(RUN) --db $(DB)

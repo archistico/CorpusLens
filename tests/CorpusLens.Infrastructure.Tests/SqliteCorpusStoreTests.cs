@@ -247,6 +247,55 @@ public sealed class SqliteCorpusStoreTests
 
 
     [Fact]
+    public async Task ListWordContextsAsync_ShouldMatchTypographicApostropheConNormalizedQuery()
+    {
+        using TestDatabase database = new();
+        string sourceFile = database.CreateSourceFile("alice.epub", "fake epub content");
+        SqliteCorpusStore store = new(database.Path);
+        StoredCorpus corpus = await store.CreateCorpusAsync("English Literature", "en");
+
+        ImportedBook book = new(
+            "book-1",
+            "Alice",
+            "Lewis Carroll",
+            "en",
+            sourceFile,
+            new[]
+            {
+                new ImportedChapter(1, "Chapter I", "chapter1.xhtml", string.Empty, "Alice’s sister said that Alice's cat won’t stay.")
+            });
+
+        StoredBookImport storedImport = await store.SaveImportedBookAsync(corpus.Id, book);
+        CorpusAnalysisResult analysis = new(
+            new CorpusSummary(1, 1, 8, 7, 7, 7.0, 4.2),
+            Array.Empty<WordFrequency>(),
+            Array.Empty<NGramFrequency>(),
+            Array.Empty<NextWordFrequency>(),
+            Array.Empty<AnalyzedSentence>());
+
+        StoredAnalysisRun run = await store.SaveAnalysisRunAsync(
+            corpus.Id,
+            storedImport.Book.Id,
+            new AnalysisSettings(),
+            analysis,
+            "report.md",
+            "words.csv",
+            "ngrams.csv",
+            "next_words.csv",
+            "extracted_text.txt");
+
+        IReadOnlyList<StoredWordContext> possessiveContexts = await store.ListWordContextsAsync(run.Id, "alice's", limit: 3, contextWords: 2);
+        IReadOnlyList<StoredWordContext> contractionContexts = await store.ListWordContextsAsync(run.Id, "won't", limit: 3, contextWords: 2);
+
+        Assert.Equal(2, possessiveContexts.Count);
+        Assert.Single(contractionContexts);
+        Assert.Contains(possessiveContexts, context => context.MatchText == "Alice’s");
+        Assert.Contains(possessiveContexts, context => context.MatchText == "Alice's");
+        Assert.Equal("won’t", contractionContexts[0].MatchText);
+    }
+
+
+    [Fact]
     public async Task ListAnalysisRunsAsync_ShouldReturnSavedRunWithCorpusAndBookTitle()
     {
         using TestDatabase database = new();

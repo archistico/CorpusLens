@@ -345,3 +345,30 @@ Puoi rigenerare la diagnostica da una run salvata:
 ```powershell
 make inspect-run RUN=1
 ```
+
+## English tokenizer notes
+
+CorpusLens keeps common English contractions and possessives as single word tokens in the current analysis model.
+
+Examples:
+
+```text
+don't
+I'm
+I'll
+won't
+couldn't
+Alice's
+Queen's
+```
+
+The tokenizer normalizes typographic apostrophes to plain apostrophes for statistics, so `Alice’s` and `Alice's` are counted together as `alice's`.
+
+Useful checks:
+
+```powershell
+make stats-word RUN=1 WORD="don't" LIMIT=25
+make stats-kwic RUN=1 WORD="don't" LIMIT=10 CONTEXT=8
+make stats-word RUN=1 WORD="alice's" LIMIT=25
+make stats-kwic RUN=1 WORD="alice's" LIMIT=10 CONTEXT=8
+```

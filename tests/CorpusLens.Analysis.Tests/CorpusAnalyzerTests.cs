@@ -62,6 +62,35 @@ public sealed class CorpusAnalyzerTests
 
 
     [Fact]
+    public void Analyze_ShouldCalculateFrequenciesAndNGramsForEnglishContractionsAndPossessives()
+    {
+        CorpusAnalyzer analyzer = new();
+        TextDocument document = new(
+            "sample",
+            "Sample",
+            "en",
+            "Alice’s sister said, \"I’m sure Alice's cat won't go.\" Alice's cat won't go.");
+
+        CorpusAnalysisResult result = analyzer.Analyze(document, Settings());
+
+        WordFrequency possessive = Assert.Single(result.Words, word => word.Word == "alice's");
+        WordFrequency im = Assert.Single(result.Words, word => word.Word == "i'm");
+        WordFrequency wont = Assert.Single(result.Words, word => word.Word == "won't");
+        NGramFrequency aliceCat = Assert.Single(result.NGrams, ngram => ngram.N == 2 && ngram.Text == "alice's cat");
+        NGramFrequency wontGo = Assert.Single(result.NGrams, ngram => ngram.N == 2 && ngram.Text == "won't go");
+
+        Assert.Equal(3, possessive.Count);
+        Assert.Equal(1, im.Count);
+        Assert.Equal(2, wont.Count);
+        Assert.Equal(2, aliceCat.Count);
+        Assert.Equal(2, wontGo.Count);
+        Assert.True(im.IsStopWord);
+        Assert.True(wont.IsStopWord);
+        Assert.False(possessive.IsStopWord);
+    }
+
+
+    [Fact]
     public void Analyze_ShouldClassifyStopWordsForDocumentLanguage()
     {
         CorpusAnalyzer analyzer = new();
