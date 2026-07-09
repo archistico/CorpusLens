@@ -46,7 +46,7 @@ public sealed class EpubBoilerplateCleaner
         }
 
         bool hasContentsNearTop = lines
-            .Take(3)
+            .Take(8)
             .Any(line => ContentsLineRegex.IsMatch(line));
 
         if (!hasContentsNearTop)

@@ -87,6 +87,30 @@ public sealed class EpubBoilerplateCleanerTests
         Assert.True(cleaner.IsLikelyFrontMatterOnly(text));
     }
 
+
+    [Fact]
+    public void IsLikelyFrontMatterOnly_ShouldDetectTableOfContentsAfterTitleLines()
+    {
+        const string text = """
+            Alice's Adventures in Wonderland
+            by Lewis Carroll
+            THE MILLENNIUM FULCRUM EDITION 3.0
+            Contents
+            CHAPTER I.
+            Down the Rabbit-Hole
+            CHAPTER II.
+            The Pool of Tears
+            CHAPTER III.
+            A Caucus-Race and a Long Tale
+            CHAPTER IV.
+            The Rabbit Sends in a Little Bill
+            """;
+
+        EpubBoilerplateCleaner cleaner = new();
+
+        Assert.True(cleaner.IsLikelyFrontMatterOnly(text));
+    }
+
     [Fact]
     public void IsLikelyFrontMatterOnly_ShouldNotDetectChapterWithProse()
     {
