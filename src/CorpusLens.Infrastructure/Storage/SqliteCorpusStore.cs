@@ -556,6 +556,57 @@ public sealed class SqliteCorpusStore
     }
 
 
+    public async Task<IReadOnlyList<StoredCollocationStatistic>> ListCollocationsAsync(
+        long analysisRunId,
+        string word,
+        int window = 4,
+        int limit = 50,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(word);
+
+        StoredAnalysisRunSummary? run = await GetAnalysisRunSummaryAsync(analysisRunId, cancellationToken)
+            .ConfigureAwait(false);
+        if (run is null)
+        {
+            return Array.Empty<StoredCollocationStatistic>();
+        }
+
+        int safeWindow = Math.Clamp(window, 1, 10);
+        int safeLimit = NormalizeLimit(limit);
+        string normalizedWord = NormalizeContextWord(word);
+        IReadOnlyList<StoredChapter> chapters = await ListChaptersAsync(run.BookId, cancellationToken)
+            .ConfigureAwait(false);
+
+        Dictionary<string, CollocationAccumulator> accumulators = new(StringComparer.Ordinal);
+        int targetCount = 0;
+
+        foreach (StoredChapter chapter in chapters)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            targetCount += AddCollocationsFromChapter(
+                analysisRunId,
+                normalizedWord,
+                safeWindow,
+                chapter.CleanText,
+                accumulators);
+        }
+
+        if (targetCount == 0)
+        {
+            return Array.Empty<StoredCollocationStatistic>();
+        }
+
+        return accumulators.Values
+            .OrderByDescending(item => item.Count)
+            .ThenByDescending(item => item.RightCount)
+            .ThenBy(item => item.Collocate, StringComparer.OrdinalIgnoreCase)
+            .Take(safeLimit)
+            .Select(item => item.ToStoredStatistic(targetCount))
+            .ToArray();
+    }
+
+
     public async Task<IReadOnlyList<StoredChapter>> ListChaptersAsync(
         long bookId,
         CancellationToken cancellationToken = default)
@@ -1199,6 +1250,71 @@ public sealed class SqliteCorpusStore
         }
     }
 
+    private static int AddCollocationsFromChapter(
+        long analysisRunId,
+        string normalizedWord,
+        int window,
+        string text,
+        IDictionary<string, CollocationAccumulator> accumulators)
+    {
+        MatchCollection matches = WordContextTokenRegex.Matches(text);
+        if (matches.Count == 0)
+        {
+            return 0;
+        }
+
+        List<WordContextToken> tokens = new(matches.Count);
+        foreach (Match match in matches)
+        {
+            tokens.Add(new WordContextToken(
+                match.Index,
+                match.Index + match.Length,
+                match.Value,
+                NormalizeContextWord(match.Value)));
+        }
+
+        int targetCount = 0;
+        for (int tokenIndex = 0; tokenIndex < tokens.Count; tokenIndex++)
+        {
+            WordContextToken token = tokens[tokenIndex];
+            if (!string.Equals(token.NormalizedText, normalizedWord, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            targetCount++;
+            int startIndex = Math.Max(0, tokenIndex - window);
+            int endIndex = Math.Min(tokens.Count - 1, tokenIndex + window);
+
+            for (int collocateIndex = startIndex; collocateIndex <= endIndex; collocateIndex++)
+            {
+                if (collocateIndex == tokenIndex)
+                {
+                    continue;
+                }
+
+                WordContextToken collocateToken = tokens[collocateIndex];
+                if (string.Equals(collocateToken.NormalizedText, normalizedWord, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                int signedDistance = collocateIndex - tokenIndex;
+                int absoluteDistance = Math.Abs(signedDistance);
+                if (!accumulators.TryGetValue(collocateToken.NormalizedText, out CollocationAccumulator? accumulator))
+                {
+                    accumulator = new CollocationAccumulator(analysisRunId, normalizedWord, collocateToken.NormalizedText);
+                    accumulators.Add(collocateToken.NormalizedText, accumulator);
+                }
+
+                accumulator.AddOccurrence(signedDistance < 0, absoluteDistance);
+            }
+        }
+
+        return targetCount;
+    }
+
+
     private static string NormalizeContextWord(string word)
     {
         return word
@@ -1529,6 +1645,61 @@ public sealed class SqliteCorpusStore
         int EndOffset,
         string Text,
         string NormalizedText);
+
+
+    private sealed class CollocationAccumulator
+    {
+        public CollocationAccumulator(long analysisRunId, string word, string collocate)
+        {
+            AnalysisRunId = analysisRunId;
+            Word = word;
+            Collocate = collocate;
+        }
+
+        public long AnalysisRunId { get; }
+
+        public string Word { get; }
+
+        public string Collocate { get; }
+
+        public int Count { get; private set; }
+
+        public int LeftCount { get; private set; }
+
+        public int RightCount { get; private set; }
+
+        public int DistanceSum { get; private set; }
+
+        public void AddOccurrence(bool isLeft, int distance)
+        {
+            Count++;
+            DistanceSum += distance;
+            if (isLeft)
+            {
+                LeftCount++;
+            }
+            else
+            {
+                RightCount++;
+            }
+        }
+
+        public StoredCollocationStatistic ToStoredStatistic(int targetCount)
+        {
+            double ratePerTarget = targetCount == 0 ? 0 : Count / (double)targetCount;
+            double averageDistance = Count == 0 ? 0 : DistanceSum / (double)Count;
+
+            return new StoredCollocationStatistic(
+                AnalysisRunId,
+                Word,
+                Collocate,
+                Count,
+                LeftCount,
+                RightCount,
+                ratePerTarget,
+                averageDistance);
+        }
+    }
 
 
     private sealed class WordBookDistributionAccumulator

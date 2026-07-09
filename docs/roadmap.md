@@ -1211,3 +1211,12 @@ Aggiunto comando `stats word-books <runId> <word>` / `make stats-word-books` per
 ### Milestone 10.1 note
 
 Uniformata l'intestazione del comando `stats word-books`: ora stampa sempre `Source books`, `Matched books`, `Coverage`, `Total count` e `Shown books`, anche quando la parola è presente in molti libri o non viene trovata.
+
+
+### Milestone 11 note
+
+Aggiunto comando `stats collocations <runId> <word>` / `make stats-collocations` per calcolare collocazioni a finestra intorno a una parola target. La query usa i capitoli puliti già salvati nel DB e restituisce conteggio, sinistra/destra, frequenza per occorrenza target e distanza media. PMI/log-likelihood e token index persistente restano fuori da questa prima milestone.
+
+### Milestone 11.1 note
+
+Aggiunti filtri `--content-only` e `--function-only` al comando `stats collocations`, con colonna `Type` e target Makefile dedicati. Le collocazioni restano calcolate a frequenza grezza su finestra, ma l'output content-only permette di vedere subito collocati lexicalmente più utili.

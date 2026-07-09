@@ -569,6 +569,61 @@ public sealed class SqliteCorpusStoreTests
         Assert.Equal(1, distribution[1].Count);
     }
 
+    [Fact]
+    public async Task ListCollocationsAsync_ShouldCountWindowCollocatesAroundTargetWord()
+    {
+        using TestDatabase database = new();
+        string sourceFile = database.CreateSourceFile("alice.epub", "fake epub content");
+        SqliteCorpusStore store = new(database.Path);
+        StoredCorpus corpus = await store.CreateCorpusAsync("English Kids", "en");
+
+        ImportedBook book = new(
+            "alice",
+            "Alice",
+            "Lewis Carroll",
+            "en",
+            sourceFile,
+            new[]
+            {
+                new ImportedChapter(1, "Chapter I", "chapter1.xhtml", string.Empty, "Alice saw white rabbit. Alice followed rabbit.")
+            });
+
+        StoredBookImport storedImport = await store.SaveImportedBookAsync(corpus.Id, book);
+        CorpusAnalysisResult analysis = new(
+            new CorpusSummary(1, 2, 7, 7, 5, 3.5, 5.0),
+            Array.Empty<WordFrequency>(),
+            Array.Empty<NGramFrequency>(),
+            Array.Empty<NextWordFrequency>(),
+            Array.Empty<AnalyzedSentence>());
+
+        StoredAnalysisRun run = await store.SaveAnalysisRunAsync(
+            corpus.Id,
+            storedImport.Book.Id,
+            new AnalysisSettings(),
+            analysis,
+            "report.md",
+            "words.csv",
+            "ngrams.csv",
+            "next_words.csv",
+            "extracted_text.txt");
+
+        IReadOnlyList<StoredCollocationStatistic> collocations = await store.ListCollocationsAsync(run.Id, "ALICE", window: 2, limit: 10);
+
+        StoredCollocationStatistic rabbit = Assert.Single(collocations, item => item.Collocate == "rabbit");
+        Assert.Equal(2, rabbit.Count);
+        Assert.Equal(1, rabbit.LeftCount);
+        Assert.Equal(1, rabbit.RightCount);
+        Assert.Equal(1.0, rabbit.RatePerTarget, precision: 2);
+        Assert.Equal(1.5, rabbit.AverageDistance, precision: 2);
+
+        StoredCollocationStatistic white = Assert.Single(collocations, item => item.Collocate == "white");
+        Assert.Equal(2, white.Count);
+        Assert.Equal(1, white.LeftCount);
+        Assert.Equal(1, white.RightCount);
+        Assert.Equal(2.0, white.AverageDistance, precision: 2);
+    }
+
+
     private sealed class TestDatabase : IDisposable
     {
         private readonly string _directoryPath;

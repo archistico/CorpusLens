@@ -1,4 +1,5 @@
 using System.Globalization;
+using CorpusLens.Analysis.StopWords;
 using CorpusLens.Application.EpubAnalysis;
 using CorpusLens.Application.Storage;
 using CorpusLens.Application.TextAnalysis;
@@ -249,6 +250,7 @@ public static class Program
             "summary" => await PrintAnalysisRunSummaryAsync(subCommandArgs).ConfigureAwait(false),
             "books" => await PrintAnalysisRunBooksAsync(subCommandArgs).ConfigureAwait(false),
             "word-books" => await PrintWordBookDistributionAsync(subCommandArgs).ConfigureAwait(false),
+            "collocations" => await PrintCollocationsAsync(subCommandArgs).ConfigureAwait(false),
             "words" => await PrintTopWordsAsync(subCommandArgs).ConfigureAwait(false),
             "word" => await PrintWordDetailAsync(subCommandArgs).ConfigureAwait(false),
             "kwic" => await PrintWordContextsAsync(subCommandArgs).ConfigureAwait(false),
@@ -409,6 +411,62 @@ public static class Program
 
         return 0;
     }
+
+    private static async Task<int> PrintCollocationsAsync(string[] args)
+    {
+        if (!TryReadRunId(args, out long analysisRunId) || args.Length < 2)
+        {
+            Console.Error.WriteLine("Usage: stats collocations <runId> <word> [--window <n>] [--limit <n>] [--content-only|--function-only] [--db <file>]");
+            return 1;
+        }
+
+        string wordText = args[1];
+        CommandLineOptions options = CommandLineOptions.Parse(args.Skip(2).ToArray());
+        int window = TryReadIntOption(options, "window") ?? 4;
+        int safeWindow = Math.Clamp(window, 1, 10);
+        int requestedLimit = ReadLimit(options);
+        CollocationWordFilter filter = ReadCollocationWordFilter(options);
+        int fetchLimit = filter == CollocationWordFilter.All
+            ? requestedLimit
+            : Math.Min(Math.Max(requestedLimit * 10, 200), 2_000);
+
+        SqliteCorpusStore store = new(options.Get("db", DefaultDatabasePath()));
+        IReadOnlyList<string> languageCodes = await ReadRunLanguageCodesAsync(store, analysisRunId)
+            .ConfigureAwait(false);
+
+        IReadOnlyList<StoredCollocationStatistic> allCollocations = await store
+            .ListCollocationsAsync(analysisRunId, wordText, safeWindow, fetchLimit)
+            .ConfigureAwait(false);
+
+        IReadOnlyList<StoredCollocationStatistic> collocations = ApplyCollocationFilter(
+                allCollocations,
+                filter,
+                languageCodes)
+            .Take(requestedLimit)
+            .ToArray();
+
+        Console.WriteLine($"Collocations for '{wordText}' in run {analysisRunId}");
+        Console.WriteLine($"Window: {safeWindow} words per side");
+        Console.WriteLine($"Filter: {CollocationFilterLabel(filter)}");
+        Console.WriteLine($"Shown collocates: {collocations.Count} of {allCollocations.Count}");
+        Console.WriteLine();
+        Console.WriteLine("#    Collocate            Type      Count  Left  Right  Per target  Avg distance");
+        Console.WriteLine("---  -------------------  --------  -----  ----  -----  ----------  ------------");
+        for (int index = 0; index < collocations.Count; index++)
+        {
+            StoredCollocationStatistic collocation = collocations[index];
+            string type = IsFunctionCollocate(collocation, languageCodes) ? "function" : "content";
+            Console.WriteLine($"{index + 1,3}  {TrimForColumn(collocation.Collocate, 19),-19}  {type,-8}  {collocation.Count,5}  {collocation.LeftCount,4}  {collocation.RightCount,5}  {FormatDouble(collocation.RatePerTarget),10}  {FormatDouble(collocation.AverageDistance),12}");
+        }
+
+        if (collocations.Count == 0)
+        {
+            Console.WriteLine("No collocations found for the selected filter.");
+        }
+
+        return 0;
+    }
+
 
     private static async Task<int> PrintTopWordsAsync(string[] args)
     {
@@ -862,6 +920,7 @@ public static class Program
         Console.WriteLine("  stats summary <runId> [--db <file>]");
         Console.WriteLine("  stats books <runId> [--db <file>]");
         Console.WriteLine("  stats word-books <runId> <word> [--limit <n>] [--db <file>]");
+        Console.WriteLine("  stats collocations <runId> <word> [--window <n>] [--limit <n>] [--content-only|--function-only] [--db <file>]");
         Console.WriteLine("  stats words <runId> [--limit <n>] [--content-only] [--function-only] [--db <file>]");
         Console.WriteLine("  stats word <runId> <word> [--limit <n>] [--db <file>]");
         Console.WriteLine("  stats kwic <runId> <word> [--limit <n>] [--context <n>] [--db <file>]");
@@ -896,6 +955,7 @@ public static class Program
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats summary 1");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats books 1");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats word-books 1 alice --limit 25");
+        Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats collocations 1 alice --window 4 --content-only --limit 25");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats words 1 --limit 25");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats words 1 --content-only --limit 25");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats words 1 --function-only --limit 25");
@@ -977,6 +1037,80 @@ public static class Program
 
 
 
+
+    private enum CollocationWordFilter
+    {
+        All,
+        ContentOnly,
+        FunctionOnly
+    }
+
+    private static CollocationWordFilter ReadCollocationWordFilter(CommandLineOptions options)
+    {
+        bool contentOnly = options.Has("content-only");
+        bool functionOnly = options.Has("function-only");
+
+        if (contentOnly && functionOnly)
+        {
+            throw new InvalidOperationException("Use either --content-only or --function-only, not both.");
+        }
+
+        if (contentOnly)
+        {
+            return CollocationWordFilter.ContentOnly;
+        }
+
+        return functionOnly ? CollocationWordFilter.FunctionOnly : CollocationWordFilter.All;
+    }
+
+    private static string CollocationFilterLabel(CollocationWordFilter filter)
+    {
+        return filter switch
+        {
+            CollocationWordFilter.ContentOnly => "content words only",
+            CollocationWordFilter.FunctionOnly => "function words only",
+            _ => "all words"
+        };
+    }
+
+    private static IEnumerable<StoredCollocationStatistic> ApplyCollocationFilter(
+        IEnumerable<StoredCollocationStatistic> collocations,
+        CollocationWordFilter filter,
+        IReadOnlyList<string> languageCodes)
+    {
+        return filter switch
+        {
+            CollocationWordFilter.ContentOnly => collocations.Where(item => !IsFunctionCollocate(item, languageCodes)),
+            CollocationWordFilter.FunctionOnly => collocations.Where(item => IsFunctionCollocate(item, languageCodes)),
+            _ => collocations
+        };
+    }
+
+    private static bool IsFunctionCollocate(
+        StoredCollocationStatistic collocation,
+        IReadOnlyList<string> languageCodes)
+    {
+        return StopWordProvider.IsStopWord(collocation.Collocate, languageCodes);
+    }
+
+    private static async Task<IReadOnlyList<string>> ReadRunLanguageCodesAsync(
+        SqliteCorpusStore store,
+        long analysisRunId)
+    {
+        IReadOnlyList<StoredAnalysisRunBook> sourceBooks = await store
+            .ListAnalysisRunBooksAsync(analysisRunId)
+            .ConfigureAwait(false);
+
+        string[] languageCodes = sourceBooks
+            .Select(book => book.LanguageCode)
+            .Where(code => !string.IsNullOrWhiteSpace(code))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return languageCodes.Length == 0
+            ? new[] { "en", "it", "fr", "de" }
+            : languageCodes;
+    }
 
     private static StoredWordFilter ReadWordFilter(CommandLineOptions options)
     {

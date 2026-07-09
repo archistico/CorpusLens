@@ -451,3 +451,24 @@ dotnet run --project src/CorpusLens.Cli -- stats word-books 1 "whale" --limit 30
 ```
 
 This reads stored clean chapter text and shows only books where the word appears. The command always prints source books, matched books, coverage, total count and shown books. Details: `docs/milestone-10-word-book-distribution.md` and `docs/milestone-10-1-word-books-output-consistency.md`.
+
+
+## Collocations
+
+Inspect words that occur near a target word within a configurable window:
+
+```powershell
+make stats-collocations RUN=1 WORD="whale" WINDOW=4 LIMIT=30
+make stats-collocations-content RUN=1 WORD="whale" WINDOW=4 LIMIT=30
+make stats-collocations-function RUN=1 WORD="love" WINDOW=4 LIMIT=30
+```
+
+Equivalent raw commands:
+
+```powershell
+dotnet run --project src/CorpusLens.Cli -- stats collocations 1 "whale" --window 4 --limit 30 --db ./data/corpuslens.db
+dotnet run --project src/CorpusLens.Cli -- stats collocations 1 "whale" --content-only --window 4 --limit 30 --db ./data/corpuslens.db
+dotnet run --project src/CorpusLens.Cli -- stats collocations 1 "love" --function-only --window 4 --limit 30 --db ./data/corpuslens.db
+```
+
+The command reports collocate type, total count, left/right position counts, occurrences per target occurrence and average distance from the target word. Use `--content-only` to hide function words such as articles and prepositions, or `--function-only` to inspect grammatical patterns. Details: `docs/milestone-11-collocations.md` and `docs/milestone-11-1-collocations-filters.md`.
