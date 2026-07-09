@@ -59,6 +59,22 @@ public sealed class CorpusAnalyzerTests
         Assert.Equal(1.0, nextWord.Probability, precision: 4);
     }
 
+
+    [Fact]
+    public void Analyze_ShouldUseEachDocumentForDocumentCount()
+    {
+        CorpusAnalyzer analyzer = new();
+        TextDocument first = new("first", "First", "en", "Alice smiled. Alice laughed.");
+        TextDocument second = new("second", "Second", "en", "Alice wondered. Rabbit ran.");
+
+        CorpusAnalysisResult result = analyzer.Analyze(new[] { first, second }, Settings());
+
+        Assert.Equal(2, result.Summary.DocumentCount);
+        WordFrequency alice = Assert.Single(result.Words, word => word.Word == "alice");
+        Assert.Equal(3, alice.Count);
+        Assert.Equal(2, alice.DocumentCount);
+    }
+
     private static AnalysisSettings Settings()
     {
         return new AnalysisSettings

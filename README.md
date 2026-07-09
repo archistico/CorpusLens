@@ -132,3 +132,56 @@ Dettagli tecnici: `docs/milestone-2-sqlite-persistence.md`.
 
 
 Note SQLite: the project pins SQLitePCLRaw.bundle_e_sqlite3 3.0.3 to avoid restoring the vulnerable SQLitePCLRaw.lib.e_sqlite3 2.1.11 transitive dependency.
+
+
+## Database statistics commands
+
+After running `analyze-epub` with `--corpus`, use the returned `Run Id` to query persisted statistics:
+
+```powershell
+dotnet run --project src/CorpusLens.Cli -- stats words 1 --limit 25
+dotnet run --project src/CorpusLens.Cli -- stats ngrams 1 --n 3 --limit 25
+dotnet run --project src/CorpusLens.Cli -- stats next 1 --word alice --limit 25
+dotnet run --project src/CorpusLens.Cli -- stats categories 1
+```
+
+## Milestone 4 — Makefile and folder analysis
+
+This version adds a root `Makefile` with the most common development and analysis commands.
+
+`make check` is intended for the local development database: it removes `./data` and `./artifacts` before restore/build/test, so repeated runs start from a clean state. Use `make clean-data` or `make clean` when you want to reset the local SQLite database explicitly.
+
+```powershell
+make check
+make clean-data
+make clean
+make corpus-create CORPUS="English Literature" LANG=en
+make corpus-list
+make analyze-book BOOK=./books/alice.epub OUT=./artifacts/alice CORPUS="English Literature"
+make analyze-books BOOKS=./books OUT=./artifacts/books CORPUS="English Literature"
+make stats-words RUN=1 LIMIT=25
+```
+
+CorpusLens can also analyze all EPUB files in a folder as a single aggregate corpus run:
+
+```powershell
+dotnet run --project src/CorpusLens.Cli -- analyze-epub-folder ./books --language en --out ./artifacts/books
+```
+
+To save the aggregate run in SQLite:
+
+```powershell
+dotnet run --project src/CorpusLens.Cli -- analyze-epub-folder ./books --language en --corpus "English Literature" --out ./artifacts/books
+```
+
+Recursive folder scan:
+
+```powershell
+dotnet run --project src/CorpusLens.Cli -- analyze-epub-folder ./books --language en --recursive --out ./artifacts/books
+```
+
+The aggregate analysis treats each EPUB as a separate document, so `DocumentCount` in word and n-gram statistics represents the number of books in which the item appears.
+
+### Makefile on Windows
+
+The Makefile is intended to be used from PowerShell on Windows. Cleanup targets use explicit PowerShell commands, so `make check` removes `./data` and `./artifacts` before restoring, building and testing.
