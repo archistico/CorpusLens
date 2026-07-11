@@ -14,6 +14,7 @@ It is CLI-first, testable, and stores analysis data in SQLite so that corpora ca
 - source-book lists for aggregate corpus runs
 - word distribution by book
 - collocations with content/function filters
+- repeated phrase mining
 - import diagnostics for EPUB folders
 
 ## Requirements
@@ -98,6 +99,14 @@ make stats-collocations-function RUN=1 WORD="love" WINDOW=4 LIMIT=30 MIN_COUNT=3
 ```
 
 Collocations are ranked with a lightweight Dice score while still showing raw counts. Use `MIN_COUNT` and `MIN_DICE` to hide weak low-frequency matches.
+
+Phrases:
+
+```powershell
+make stats-phrases RUN=1 MIN_N=2 MAX_N=5 MIN_COUNT=3 LIMIT=30
+make stats-phrases-content-boundary RUN=1 MIN_N=2 MAX_N=5 MIN_COUNT=3 MIN_CHAPTERS=2 LIMIT=30
+make stats-phrases-content-boundary RUN=1 MIN_N=2 MAX_N=5 MIN_COUNT=3 LONGEST_ONLY=--longest-only LIMIT=30
+```
 
 Import diagnostics:
 

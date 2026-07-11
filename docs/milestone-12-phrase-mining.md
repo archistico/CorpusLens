@@ -41,3 +41,10 @@ per la
 ```
 
 This milestone does not add persistent token indexes or statistical association scores for phrases.
+
+## Follow-up polish
+
+Milestone 12.2 adds:
+
+- `--min-chapters` to require cross-chapter phrase evidence.
+- `--longest-only` to hide redundant shorter phrases when a longer phrase has the same count and chapter count.

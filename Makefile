@@ -14,8 +14,8 @@
 #   make stats-collocations RUN=1 WORD=alice WINDOW=4 LIMIT=25 MIN_COUNT=1 MIN_DICE=0.0
 #   make stats-collocations-content RUN=1 WORD=whale WINDOW=4 LIMIT=25 MIN_COUNT=3
 #   make stats-collocations-function RUN=1 WORD=love WINDOW=4 LIMIT=25 MIN_COUNT=3
-#   make stats-phrases RUN=1 MIN_N=2 MAX_N=5 MIN_COUNT=3 LIMIT=25
-#   make stats-phrases-content-boundary RUN=1 MIN_N=2 MAX_N=5 MIN_COUNT=3 LIMIT=25
+#   make stats-phrases RUN=1 MIN_N=2 MAX_N=5 MIN_COUNT=3 MIN_CHAPTERS=1 LIMIT=25
+#   make stats-phrases-content-boundary RUN=1 MIN_N=2 MAX_N=5 MIN_COUNT=3 MIN_CHAPTERS=1 LONGEST_ONLY=--longest-only LIMIT=25
 #   make stats-kwic RUN=1 WORD=alice LIMIT=10 CONTEXT=8
 #   make inspect-run RUN=1
 
@@ -42,6 +42,8 @@ CONTEXT ?= 8
 WINDOW ?= 4
 MIN_COUNT ?= 1
 MIN_DICE ?= 0.0
+MIN_CHAPTERS ?= 1
+LONGEST_ONLY ?=
 MIN_N ?= 2
 MAX_N ?= 5
 DIAGNOSTICS_OUT ?= ./artifacts/diagnostics/import_diagnostics.md
@@ -144,10 +146,10 @@ stats-collocations-function:
 	$(DOTNET) run --project $(PROJECT) -- stats collocations $(RUN) "$(WORD)" --function-only --window $(WINDOW) --limit $(LIMIT) --min-count $(MIN_COUNT) --min-dice $(MIN_DICE) --db $(DB)
 
 stats-phrases:
-	$(DOTNET) run --project $(PROJECT) -- stats phrases $(RUN) --min-n $(MIN_N) --max-n $(MAX_N) --limit $(LIMIT) --min-count $(MIN_COUNT) --db $(DB)
+	$(DOTNET) run --project $(PROJECT) -- stats phrases $(RUN) --min-n $(MIN_N) --max-n $(MAX_N) --limit $(LIMIT) --min-count $(MIN_COUNT) --min-chapters $(MIN_CHAPTERS) $(LONGEST_ONLY) --db $(DB)
 
 stats-phrases-content-boundary:
-	$(DOTNET) run --project $(PROJECT) -- stats phrases $(RUN) --min-n $(MIN_N) --max-n $(MAX_N) --limit $(LIMIT) --min-count $(MIN_COUNT) --content-boundary --db $(DB)
+	$(DOTNET) run --project $(PROJECT) -- stats phrases $(RUN) --min-n $(MIN_N) --max-n $(MAX_N) --limit $(LIMIT) --min-count $(MIN_COUNT) --min-chapters $(MIN_CHAPTERS) --content-boundary $(LONGEST_ONLY) --db $(DB)
 
 stats-kwic:
 	$(DOTNET) run --project $(PROJECT) -- stats kwic $(RUN) "$(WORD)" --limit $(LIMIT) --context $(CONTEXT) --db $(DB)

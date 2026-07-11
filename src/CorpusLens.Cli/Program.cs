@@ -484,7 +484,7 @@ public static class Program
     {
         if (!TryReadRunId(args, out long analysisRunId))
         {
-            Console.Error.WriteLine("Usage: stats phrases <runId> [--n <n>|--min-n <n> --max-n <n>] [--min-count <n>] [--limit <n>] [--content-boundary] [--db <file>]");
+            Console.Error.WriteLine("Usage: stats phrases <runId> [--n <n>|--min-n <n> --max-n <n>] [--min-count <n>] [--min-chapters <n>] [--limit <n>] [--content-boundary] [--longest-only] [--db <file>]");
             return 1;
         }
 
@@ -495,9 +495,11 @@ public static class Program
         int safeMinN = Math.Clamp(minN, 2, 8);
         int safeMaxN = Math.Clamp(maxN, safeMinN, 8);
         int minCount = Math.Max(1, TryReadIntOption(options, "min-count") ?? 2);
+        int minChapters = Math.Max(1, TryReadIntOption(options, "min-chapters") ?? 1);
         int requestedLimit = ReadLimit(options);
         bool contentBoundaryOnly = options.Has("content-boundary");
-        int fetchLimit = Math.Min(Math.Max(requestedLimit * 20, 200), 2_000);
+        bool longestOnly = options.Has("longest-only");
+        int fetchLimit = Math.Min(Math.Max(requestedLimit * 40, 500), 10_000);
 
         SqliteCorpusStore store = new(options.Get("db", DefaultDatabasePath()));
         IReadOnlyList<string> languageCodes = await ReadRunLanguageCodesAsync(store, analysisRunId)
@@ -508,8 +510,15 @@ public static class Program
             .ConfigureAwait(false);
 
         IReadOnlyList<StoredPhraseStatistic> matchedPhrases = allPhrases
+            .Where(phrase => phrase.ChapterCount >= minChapters)
             .Where(phrase => !contentBoundaryOnly || HasContentWordBoundary(phrase.Phrase, languageCodes))
             .ToArray();
+
+        if (longestOnly)
+        {
+            matchedPhrases = KeepLongestOnlyPhrases(matchedPhrases);
+        }
+
         IReadOnlyList<StoredPhraseStatistic> phrases = matchedPhrases
             .Take(requestedLimit)
             .ToArray();
@@ -519,8 +528,11 @@ public static class Program
             ? $"N range: {safeMinN}-{safeMaxN}"
             : $"N: {safeMinN}");
         Console.WriteLine($"Minimum count: {minCount}");
+        Console.WriteLine($"Minimum chapters: {minChapters}");
         Console.WriteLine($"Filter: {(contentBoundaryOnly ? "content-word boundary" : "all phrases")}");
+        Console.WriteLine($"Nested phrases: {(longestOnly ? "longest only" : "shown")}");
         Console.WriteLine("Ranking: Count, then longer phrases");
+        Console.WriteLine($"Fetched candidates: {allPhrases.Count}");
         Console.WriteLine($"Matched phrases: {matchedPhrases.Count}");
         Console.WriteLine($"Shown phrases: {phrases.Count} of {matchedPhrases.Count}");
         Console.WriteLine();
@@ -1028,7 +1040,7 @@ public static class Program
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats books 1");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats word-books 1 alice --limit 25");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats collocations 1 alice --window 4 --content-only --min-count 3 --limit 25");
-        Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats phrases 1 --min-n 2 --max-n 5 --min-count 3 --limit 25");
+        Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats phrases 1 --min-n 2 --max-n 5 --min-count 3 --min-chapters 2 --content-boundary --longest-only --limit 25");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats words 1 --limit 25");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats words 1 --content-only --limit 25");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats words 1 --function-only --limit 25");
@@ -1156,6 +1168,64 @@ public static class Program
     {
         return phrase
             .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    }
+
+    private static IReadOnlyList<StoredPhraseStatistic> KeepLongestOnlyPhrases(
+        IReadOnlyList<StoredPhraseStatistic> phrases)
+    {
+        return phrases
+            .Where(candidate => !phrases.Any(other => IsRedundantNestedPhrase(candidate, other)))
+            .OrderByDescending(phrase => phrase.Count)
+            .ThenByDescending(phrase => phrase.N)
+            .ThenBy(phrase => phrase.Phrase, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static bool IsRedundantNestedPhrase(
+        StoredPhraseStatistic candidate,
+        StoredPhraseStatistic other)
+    {
+        if (other.N <= candidate.N
+            || other.Count != candidate.Count
+            || other.ChapterCount != candidate.ChapterCount)
+        {
+            return false;
+        }
+
+        string[] candidateWords = SplitPhraseWords(candidate.Phrase);
+        string[] otherWords = SplitPhraseWords(other.Phrase);
+        if (otherWords.Length <= candidateWords.Length)
+        {
+            return false;
+        }
+
+        return ContainsContiguousWords(otherWords, candidateWords);
+    }
+
+    private static bool ContainsContiguousWords(string[] longer, string[] shorter)
+    {
+        for (int startIndex = 0; startIndex <= longer.Length - shorter.Length; startIndex++)
+        {
+            bool matched = true;
+            for (int offset = 0; offset < shorter.Length; offset++)
+            {
+                if (!string.Equals(
+                    longer[startIndex + offset],
+                    shorter[offset],
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    matched = false;
+                    break;
+                }
+            }
+
+            if (matched)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private enum CollocationWordFilter

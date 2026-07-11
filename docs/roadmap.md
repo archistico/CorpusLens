@@ -1240,3 +1240,9 @@ Phrase mining command added with n-range, min-count and optional content-word bo
 ## Maintenance notes
 
 - Milestone 12.1 fixed single-run `stats books`, sentence-classification punctuation edge cases, and n-gram contiguity with `MinWordLength`.
+
+## Milestone 12.2 — Phrase mining polish
+
+- Added `--min-chapters` for `stats phrases`.
+- Added `--longest-only` to suppress conservative nested phrase duplicates.
+- Added Makefile support for `MIN_CHAPTERS` and `LONGEST_ONLY`.
