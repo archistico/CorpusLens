@@ -27,9 +27,11 @@
 #   make stats-phrases-content-boundary RUN=1 MIN_N=2 MAX_N=5 MIN_COUNT=3 MIN_CHAPTERS=1 LONGEST_ONLY=--longest-only LIMIT=25
 #   make stats-kwic RUN=1 WORD=alice LIMIT=10 CONTEXT=8
 #   make inspect-run RUN=1
+#   make desktop
 
 DOTNET ?= dotnet
 PROJECT ?= src/CorpusLens.Cli
+DESKTOP_PROJECT ?= src/CorpusLens.Desktop
 DB ?= ./data/corpuslens.db
 CORPUS ?= English Literature
 LANG ?= en
@@ -67,7 +69,7 @@ MIN_PHRASE_COUNT ?= 3
 MIN_PHRASE_CHAPTERS ?= 2
 DIFFICULTY_LENGTH_ARGS = $(if $(LONG_WORD_LENGTH),--long-word-length $(LONG_WORD_LENGTH),) $(if $(VERY_LONG_WORD_LENGTH),--very-long-word-length $(VERY_LONG_WORD_LENGTH),)
 
-.PHONY: restore build test check demo clean clean-data clean-artifacts setup-books corpus-create corpus-create-en corpus-create-it corpus-list analyze-text analyze-book analyze-books analyze-books-recursive analyze-en analyze-it analyze-en-recursive analyze-it-recursive stats-runs stats-summary stats-profile stats-health stats-books stats-token-index stats-words stats-content stats-function stats-word stats-word-books stats-compare-word stats-compare-words stats-compare-words-content stats-compare-words-function stats-compare-words-shared stats-compare-words-exclusive stats-difficulty stats-compare-difficulty stats-language-profiles stats-language-profile stats-collocations stats-collocations-content stats-collocations-function stats-phrases stats-phrases-content-boundary stats-kwic stats-ngrams stats-trigrams stats-next stats-categories inspect-run
+.PHONY: restore build test check demo desktop clean clean-data clean-artifacts setup-books corpus-create corpus-create-en corpus-create-it corpus-list analyze-text analyze-book analyze-books analyze-books-recursive analyze-en analyze-it analyze-en-recursive analyze-it-recursive stats-runs stats-summary stats-profile stats-health stats-books stats-token-index stats-words stats-content stats-function stats-word stats-word-books stats-compare-word stats-compare-words stats-compare-words-content stats-compare-words-function stats-compare-words-shared stats-compare-words-exclusive stats-difficulty stats-compare-difficulty stats-language-profiles stats-language-profile stats-collocations stats-collocations-content stats-collocations-function stats-phrases stats-phrases-content-boundary stats-kwic stats-ngrams stats-trigrams stats-next stats-categories inspect-run
 
 restore:
 	$(DOTNET) restore
@@ -82,6 +84,9 @@ check: clean-data clean-artifacts restore build test
 
 demo:
 	$(DOTNET) run --project $(PROJECT) -- demo --out ./artifacts/demo
+
+desktop:
+	$(DOTNET) run --project $(DESKTOP_PROJECT)
 
 clean: clean-data clean-artifacts
 

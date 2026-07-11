@@ -1,9 +1,4 @@
 E:\sviluppo\2026 CorpusLens\CorpusLens\tests\CorpusLens.Analysis.Tests\bin\Debug\net10.0\.msCoverageSourceRootsMapping_CorpusLens.Analysis.Tests
-E:\sviluppo\2026 CorpusLens\CorpusLens\tests\CorpusLens.Analysis.Tests\obj\Debug\net10.0\CorpusLens.Analysis.Tests.csproj.AssemblyReference.cache
-E:\sviluppo\2026 CorpusLens\CorpusLens\tests\CorpusLens.Analysis.Tests\obj\Debug\net10.0\CorpusLens.Analysis.Tests.GeneratedMSBuildEditorConfig.editorconfig
-E:\sviluppo\2026 CorpusLens\CorpusLens\tests\CorpusLens.Analysis.Tests\obj\Debug\net10.0\CorpusLens.Analysis.Tests.AssemblyInfoInputs.cache
-E:\sviluppo\2026 CorpusLens\CorpusLens\tests\CorpusLens.Analysis.Tests\obj\Debug\net10.0\CorpusLens.Analysis.Tests.AssemblyInfo.cs
-E:\sviluppo\2026 CorpusLens\CorpusLens\tests\CorpusLens.Analysis.Tests\obj\Debug\net10.0\CorpusLens.Analysis.Tests.csproj.CoreCompileInputs.cache
 E:\sviluppo\2026 CorpusLens\CorpusLens\tests\CorpusLens.Analysis.Tests\bin\Debug\net10.0\testhost.dll
 E:\sviluppo\2026 CorpusLens\CorpusLens\tests\CorpusLens.Analysis.Tests\bin\Debug\net10.0\testhost.exe
 E:\sviluppo\2026 CorpusLens\CorpusLens\tests\CorpusLens.Analysis.Tests\bin\Debug\net10.0\xunit.runner.visualstudio.testadapter.dll
@@ -95,10 +90,15 @@ E:\sviluppo\2026 CorpusLens\CorpusLens\tests\CorpusLens.Analysis.Tests\bin\Debug
 E:\sviluppo\2026 CorpusLens\CorpusLens\tests\CorpusLens.Analysis.Tests\bin\Debug\net10.0\CorpusLens.Domain.dll
 E:\sviluppo\2026 CorpusLens\CorpusLens\tests\CorpusLens.Analysis.Tests\bin\Debug\net10.0\CorpusLens.Analysis.pdb
 E:\sviluppo\2026 CorpusLens\CorpusLens\tests\CorpusLens.Analysis.Tests\bin\Debug\net10.0\CorpusLens.Domain.pdb
+E:\sviluppo\2026 CorpusLens\CorpusLens\tests\CorpusLens.Analysis.Tests\obj\Debug\net10.0\CorpusLens.Analysis.Tests.csproj.AssemblyReference.cache
+E:\sviluppo\2026 CorpusLens\CorpusLens\tests\CorpusLens.Analysis.Tests\obj\Debug\net10.0\CorpusLens.Analysis.Tests.GeneratedMSBuildEditorConfig.editorconfig
+E:\sviluppo\2026 CorpusLens\CorpusLens\tests\CorpusLens.Analysis.Tests\obj\Debug\net10.0\CorpusLens.Analysis.Tests.AssemblyInfoInputs.cache
+E:\sviluppo\2026 CorpusLens\CorpusLens\tests\CorpusLens.Analysis.Tests\obj\Debug\net10.0\CorpusLens.Analysis.Tests.AssemblyInfo.cs
+E:\sviluppo\2026 CorpusLens\CorpusLens\tests\CorpusLens.Analysis.Tests\obj\Debug\net10.0\CorpusLens.Analysis.Tests.csproj.CoreCompileInputs.cache
+E:\sviluppo\2026 CorpusLens\CorpusLens\tests\CorpusLens.Analysis.Tests\obj\Debug\net10.0\CorpusLens.Analysis.Tests.sourcelink.json
 E:\sviluppo\2026 CorpusLens\CorpusLens\tests\CorpusLens.Analysis.Tests\obj\Debug\net10.0\CorpusLe.80F43C2E.Up2Date
 E:\sviluppo\2026 CorpusLens\CorpusLens\tests\CorpusLens.Analysis.Tests\obj\Debug\net10.0\CorpusLens.Analysis.Tests.dll
 E:\sviluppo\2026 CorpusLens\CorpusLens\tests\CorpusLens.Analysis.Tests\obj\Debug\net10.0\refint\CorpusLens.Analysis.Tests.dll
 E:\sviluppo\2026 CorpusLens\CorpusLens\tests\CorpusLens.Analysis.Tests\obj\Debug\net10.0\CorpusLens.Analysis.Tests.pdb
 E:\sviluppo\2026 CorpusLens\CorpusLens\tests\CorpusLens.Analysis.Tests\obj\Debug\net10.0\CorpusLens.Analysis.Tests.genruntimeconfig.cache
 E:\sviluppo\2026 CorpusLens\CorpusLens\tests\CorpusLens.Analysis.Tests\obj\Debug\net10.0\ref\CorpusLens.Analysis.Tests.dll
-E:\sviluppo\2026 CorpusLens\CorpusLens\tests\CorpusLens.Analysis.Tests\obj\Debug\net10.0\CorpusLens.Analysis.Tests.sourcelink.json

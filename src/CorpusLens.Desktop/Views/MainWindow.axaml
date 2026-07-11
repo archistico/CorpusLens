@@ -1,0 +1,92 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CorpusLens.Desktop.Views.MainWindow"
+        Title="CorpusLens"
+        Width="1180"
+        Height="760"
+        MinWidth="900"
+        MinHeight="600">
+  <Grid RowDefinitions="Auto,*,Auto">
+    <Border Grid.Row="0" Padding="16,12" BorderBrush="#D0D7DE" BorderThickness="0,0,0,1">
+      <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+        <TextBlock Grid.Column="0"
+                   Text="CorpusLens"
+                   FontSize="22"
+                   FontWeight="SemiBold"
+                   VerticalAlignment="Center" />
+        <Button Grid.Column="1"
+                Margin="12,0,0,0"
+                Content="Open database"
+                Command="{Binding OpenDatabaseCommand}" />
+        <TextBlock Grid.Column="2"
+                   Margin="12,0,0,0"
+                   Text="{Binding DatabasePath}"
+                   VerticalAlignment="Center"
+                   TextTrimming="CharacterEllipsis" />
+        <Button Grid.Column="3"
+                Margin="12,0,0,0"
+                Content="Refresh"
+                Command="{Binding RefreshCommand}" />
+      </Grid>
+    </Border>
+
+    <Grid Grid.Row="1" ColumnDefinitions="280,*">
+      <Border Grid.Column="0" Padding="16" BorderBrush="#D0D7DE" BorderThickness="0,0,1,0">
+        <Grid RowDefinitions="Auto,*">
+          <TextBlock Grid.Row="0"
+                     Text="Runs"
+                     FontSize="16"
+                     FontWeight="SemiBold"
+                     Margin="0,0,0,12" />
+          <ListBox Grid.Row="1"
+                   ItemsSource="{Binding Runs}"
+                   SelectedItem="{Binding SelectedRun}" />
+        </Grid>
+      </Border>
+
+      <ScrollViewer Grid.Column="1">
+        <StackPanel Margin="24" Spacing="18">
+          <TextBlock Text="{Binding EmptyStateTitle}"
+                     FontSize="28"
+                     FontWeight="SemiBold" />
+          <TextBlock Text="{Binding EmptyStateMessage}"
+                     FontSize="15"
+                     TextWrapping="Wrap"
+                     MaxWidth="760" />
+
+          <Grid ColumnDefinitions="*,*,*">
+            <Border Grid.Column="0" Padding="16" BorderBrush="#D0D7DE" BorderThickness="1" CornerRadius="8">
+              <StackPanel Spacing="6">
+                <TextBlock Text="Run dashboard" FontWeight="SemiBold" />
+                <TextBlock Text="Summary, profile and health checks will appear here." TextWrapping="Wrap" />
+              </StackPanel>
+            </Border>
+            <Border Grid.Column="1" Margin="16,0,0,0" Padding="16" BorderBrush="#D0D7DE" BorderThickness="1" CornerRadius="8">
+              <StackPanel Spacing="6">
+                <TextBlock Text="Word explorer" FontWeight="SemiBold" />
+                <TextBlock Text="Word detail, KWIC and book distribution will follow." TextWrapping="Wrap" />
+              </StackPanel>
+            </Border>
+            <Border Grid.Column="2" Margin="16,0,0,0" Padding="16" BorderBrush="#D0D7DE" BorderThickness="1" CornerRadius="8">
+              <StackPanel Spacing="6">
+                <TextBlock Text="Analysis tools" FontWeight="SemiBold" />
+                <TextBlock Text="Collocations, phrases and comparisons will be added incrementally." TextWrapping="Wrap" />
+              </StackPanel>
+            </Border>
+          </Grid>
+
+          <Border Padding="16" BorderBrush="#D0D7DE" BorderThickness="1" CornerRadius="8">
+            <StackPanel Spacing="8">
+              <TextBlock Text="Selected run" FontWeight="SemiBold" />
+              <TextBlock Text="{Binding SelectedRun}" />
+            </StackPanel>
+          </Border>
+        </StackPanel>
+      </ScrollViewer>
+    </Grid>
+
+    <Border Grid.Row="2" Padding="12,8" BorderBrush="#D0D7DE" BorderThickness="0,1,0,0">
+      <TextBlock Text="{Binding StatusMessage}" />
+    </Border>
+  </Grid>
+</Window>

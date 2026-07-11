@@ -193,6 +193,16 @@ dotnet run --project src/CorpusLens.Cli -- stats compare-words 1 2 --content-onl
 dotnet run --project src/CorpusLens.Cli -- stats difficulty 1 --db ./data/corpuslens.db
 ```
 
+## Desktop shell
+
+The Avalonia desktop project is available as an early shell:
+
+```powershell
+make desktop
+```
+
+Milestone 18.1 only opens the UI layout. Database opening and run navigation start in Milestone 18.2.
+
 ## Development
 
 ```powershell

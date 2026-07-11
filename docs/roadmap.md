@@ -1309,3 +1309,7 @@ Added `stats health <runId>` / `make stats-health` as a compact run health check
 ## Milestone 18.0 — Application query services
 
 Prepared the UI layer by adding reusable read-only query services in `CorpusLens.Application` for run listing, run summaries, compact corpus profiles, and token-index health. The CLI now uses these services for `stats runs`, `stats summary`, `stats profile`, and `stats health`. No Avalonia UI was added yet.
+
+## Milestone 18.1 — Avalonia skeleton
+
+Added the first Avalonia desktop shell in `src/CorpusLens.Desktop`, with a minimal MVVM structure, main window layout, placeholder run list, status bar and `make desktop`. No database loading or query UI is implemented yet; those start in Milestone 18.2.
