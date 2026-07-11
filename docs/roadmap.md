@@ -1268,3 +1268,11 @@ Added `stats difficulty` and `stats compare-difficulty` with a transparent heuri
 ## Milestone 14.1 — Difficulty output polish
 
 Polished `stats difficulty` output with language, thresholds and clearer comparison notes. No scoring formula changes.
+
+## Milestone 15 — Language profiles v2
+
+Added explicit language profiles for `en`, `it`, `fr` and `de`. Difficulty thresholds now default from the run language profile unless overridden on the CLI.
+
+## Milestone 16 — Corpus profile / Italian corpus validation
+
+Added `stats profile <runId>` and `make stats-profile` as a compact run validation view. It combines run metadata, source books, core metrics, difficulty profile, top content/function words and recurring phrases with conservative phrase filters. The command is useful for quickly checking Italian and English folder runs after import.

@@ -249,6 +249,7 @@ public static class Program
         {
             "runs" => await PrintAnalysisRunsAsync(subCommandArgs).ConfigureAwait(false),
             "summary" => await PrintAnalysisRunSummaryAsync(subCommandArgs).ConfigureAwait(false),
+            "profile" => await PrintRunProfileAsync(subCommandArgs).ConfigureAwait(false),
             "books" => await PrintAnalysisRunBooksAsync(subCommandArgs).ConfigureAwait(false),
             "word-books" => await PrintWordBookDistributionAsync(subCommandArgs).ConfigureAwait(false),
             "compare-word" => await PrintCompareWordAsync(subCommandArgs).ConfigureAwait(false),
@@ -334,6 +335,116 @@ public static class Program
         if (runBooks.Count > 0)
         {
             Console.WriteLine($"Source books:             {runBooks.Count}");
+        }
+
+        return 0;
+    }
+
+    private static async Task<int> PrintRunProfileAsync(string[] args)
+    {
+        if (!TryReadRunId(args, out long analysisRunId))
+        {
+            Console.Error.WriteLine("Usage: stats profile <runId> [--limit <n>] [--phrase-limit <n>] [--min-phrase-count <n>] [--min-phrase-chapters <n>] [--db <file>]");
+            return 1;
+        }
+
+        CommandLineOptions options = CommandLineOptions.Parse(args.Skip(1).ToArray());
+        SqliteCorpusStore store = new(options.Get("db", DefaultDatabasePath()));
+        int wordLimit = Math.Max(1, ReadLimit(options));
+        int phraseLimit = Math.Max(1, TryReadIntOption(options, "phrase-limit") ?? wordLimit);
+        int minPhraseCount = Math.Max(1, TryReadIntOption(options, "min-phrase-count") ?? 3);
+        int minPhraseChapters = Math.Max(1, TryReadIntOption(options, "min-phrase-chapters") ?? 2);
+
+        StoredAnalysisRunSummary? run = await store
+            .GetAnalysisRunSummaryAsync(analysisRunId)
+            .ConfigureAwait(false);
+
+        if (run is null)
+        {
+            Console.Error.WriteLine($"Analysis run {analysisRunId} was not found.");
+            return 1;
+        }
+
+        IReadOnlyList<StoredAnalysisRunBook> sourceBooks = await store
+            .ListAnalysisRunBooksAsync(analysisRunId)
+            .ConfigureAwait(false);
+        IReadOnlyList<string> languageCodes = await ReadRunLanguageCodesAsync(store, analysisRunId)
+            .ConfigureAwait(false);
+        LanguageProfile languageProfile = SelectDifficultyProfile(languageCodes);
+        DifficultyThresholds thresholds = ReadDifficultyThresholds(options, languageProfile);
+        StoredDifficultyProfile? difficultyProfile = await store
+            .GetDifficultyProfileAsync(analysisRunId, thresholds.LongWordLength, thresholds.VeryLongWordLength)
+            .ConfigureAwait(false);
+
+        IReadOnlyList<StoredWordStatistic> contentWords = await store
+            .ListTopWordsAsync(analysisRunId, wordLimit, StoredWordFilter.ContentOnly)
+            .ConfigureAwait(false);
+        IReadOnlyList<StoredWordStatistic> functionWords = await store
+            .ListTopWordsAsync(analysisRunId, wordLimit, StoredWordFilter.FunctionOnly)
+            .ConfigureAwait(false);
+
+        int phraseFetchLimit = Math.Min(Math.Max(phraseLimit * 40, 500), 10_000);
+        IReadOnlyList<StoredPhraseStatistic> candidatePhrases = await store
+            .ListPhrasesAsync(analysisRunId, minN: 2, maxN: 5, minCount: minPhraseCount, limit: phraseFetchLimit)
+            .ConfigureAwait(false);
+        IReadOnlyList<StoredPhraseStatistic> phrases = KeepLongestOnlyPhrases(candidatePhrases
+                .Where(phrase => phrase.ChapterCount >= minPhraseChapters)
+                .Where(phrase => HasContentWordBoundary(phrase.Phrase, languageCodes))
+                .ToArray())
+            .Take(phraseLimit)
+            .ToArray();
+
+        Console.WriteLine($"Corpus profile for run {analysisRunId}");
+        Console.WriteLine($"Corpus:        {run.CorpusName} ({run.CorpusId})");
+        Console.WriteLine($"Book/Source:   {run.BookTitle} ({run.BookId})");
+        Console.WriteLine($"Language:      {FormatLanguageCodes(languageCodes)}");
+        Console.WriteLine($"Profile:       {LanguageProfileLabel(languageProfile)}");
+        Console.WriteLine($"Source books:  {sourceBooks.Count}");
+        Console.WriteLine($"Chapters:      {sourceBooks.Sum(book => book.ChapterCount)}");
+        Console.WriteLine($"Status:        {run.Status}");
+        Console.WriteLine($"Report:        {run.ReportPath}");
+        Console.WriteLine();
+
+        Console.WriteLine("Core metrics");
+        Console.WriteLine($"Sentences:               {run.SentenceCount}");
+        Console.WriteLine($"Word tokens:             {run.WordTokenCount}");
+        Console.WriteLine($"Distinct words:          {run.DistinctWordCount}");
+        Console.WriteLine($"Avg words per sentence:  {FormatDouble(run.AverageWordsPerSentence)}");
+        Console.WriteLine($"Avg chars per word:      {FormatDouble(run.AverageCharactersPerWord)}");
+        if (difficultyProfile is not null)
+        {
+            Console.WriteLine($"Difficulty score:        {FormatDouble(difficultyProfile.HeuristicScore)}");
+            Console.WriteLine($"Long word share:         {FormatProbability(difficultyProfile.LongWordShare)} (>={thresholds.LongWordLength} chars)");
+            Console.WriteLine($"Content word share:      {FormatProbability(difficultyProfile.ContentWordShare)}");
+            Console.WriteLine($"Lexical diversity / 1k:  {FormatDouble(difficultyProfile.LexicalDiversityPerThousand)}");
+        }
+
+        Console.WriteLine();
+        Console.WriteLine($"Top {contentWords.Count} content words");
+        Console.WriteLine("Word                 Count  Per million");
+        Console.WriteLine("-------------------  -----  -----------");
+        foreach (StoredWordStatistic word in contentWords)
+        {
+            Console.WriteLine($"{TrimForColumn(word.Word, 19),-19}  {word.Count,5}  {FormatDouble(word.FrequencyPerMillion),11}");
+        }
+
+        Console.WriteLine();
+        Console.WriteLine($"Top {functionWords.Count} function words");
+        Console.WriteLine("Word                 Count  Per million");
+        Console.WriteLine("-------------------  -----  -----------");
+        foreach (StoredWordStatistic word in functionWords)
+        {
+            Console.WriteLine($"{TrimForColumn(word.Word, 19),-19}  {word.Count,5}  {FormatDouble(word.FrequencyPerMillion),11}");
+        }
+
+        Console.WriteLine();
+        Console.WriteLine($"Top {phrases.Count} recurring phrases");
+        Console.WriteLine($"Filters: content-word boundary; count >= {minPhraseCount}; chapters >= {minPhraseChapters}; longest only");
+        Console.WriteLine("Phrase                              N  Count  Chapters");
+        Console.WriteLine("----------------------------------  -  -----  --------");
+        foreach (StoredPhraseStatistic phrase in phrases)
+        {
+            Console.WriteLine($"{TrimForColumn(phrase.Phrase, 34),-34}  {phrase.N,1}  {phrase.Count,5}  {phrase.ChapterCount,8}");
         }
 
         return 0;
@@ -1280,6 +1391,7 @@ public static class Program
         Console.WriteLine("  corpus list [--db <file>]");
         Console.WriteLine("  stats runs [--corpus-id <id>] [--limit <n>] [--db <file>]");
         Console.WriteLine("  stats summary <runId> [--db <file>]");
+        Console.WriteLine("  stats profile <runId> [--limit <n>] [--phrase-limit <n>] [--min-phrase-count <n>] [--min-phrase-chapters <n>] [--db <file>]");
         Console.WriteLine("  stats books <runId> [--db <file>]");
         Console.WriteLine("  stats word-books <runId> <word> [--limit <n>] [--db <file>]");
         Console.WriteLine("  stats compare-word <leftRunId> <rightRunId> <word> [--db <file>]");
@@ -1321,6 +1433,7 @@ public static class Program
         Console.WriteLine("Stats examples:");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats runs --limit 10");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats summary 1");
+        Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats profile 1 --limit 10 --phrase-limit 10");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats books 1");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats word-books 1 alice --limit 25");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats compare-word 1 2 love");

@@ -6,6 +6,7 @@
 #   make analyze-books BOOKS=./books/en OUT=./artifacts/en CORPUS="English Literature" LANG=en
 #   make analyze-en
 #   make analyze-it
+#   make stats-profile RUN=1 LIMIT=10 PHRASE_LIMIT=10
 #   make stats-words RUN=1 LIMIT=25
 #   make stats-content RUN=1 LIMIT=25
 #   make stats-function RUN=1 LIMIT=25
@@ -59,9 +60,12 @@ LONGEST_ONLY ?=
 MIN_N ?= 2
 MAX_N ?= 5
 DIAGNOSTICS_OUT ?= ./artifacts/diagnostics/import_diagnostics.md
+PHRASE_LIMIT ?= 10
+MIN_PHRASE_COUNT ?= 3
+MIN_PHRASE_CHAPTERS ?= 2
 DIFFICULTY_LENGTH_ARGS = $(if $(LONG_WORD_LENGTH),--long-word-length $(LONG_WORD_LENGTH),) $(if $(VERY_LONG_WORD_LENGTH),--very-long-word-length $(VERY_LONG_WORD_LENGTH),)
 
-.PHONY: restore build test check demo clean clean-data clean-artifacts setup-books corpus-create corpus-create-en corpus-create-it corpus-list analyze-text analyze-book analyze-books analyze-books-recursive analyze-en analyze-it analyze-en-recursive analyze-it-recursive stats-runs stats-summary stats-books stats-words stats-content stats-function stats-word stats-word-books stats-compare-word stats-compare-words stats-compare-words-content stats-compare-words-function stats-compare-words-shared stats-compare-words-exclusive stats-difficulty stats-compare-difficulty stats-language-profiles stats-language-profile stats-collocations stats-collocations-content stats-collocations-function stats-phrases stats-phrases-content-boundary stats-kwic stats-ngrams stats-trigrams stats-next stats-categories inspect-run
+.PHONY: restore build test check demo clean clean-data clean-artifacts setup-books corpus-create corpus-create-en corpus-create-it corpus-list analyze-text analyze-book analyze-books analyze-books-recursive analyze-en analyze-it analyze-en-recursive analyze-it-recursive stats-runs stats-summary stats-profile stats-books stats-words stats-content stats-function stats-word stats-word-books stats-compare-word stats-compare-words stats-compare-words-content stats-compare-words-function stats-compare-words-shared stats-compare-words-exclusive stats-difficulty stats-compare-difficulty stats-language-profiles stats-language-profile stats-collocations stats-collocations-content stats-collocations-function stats-phrases stats-phrases-content-boundary stats-kwic stats-ngrams stats-trigrams stats-next stats-categories inspect-run
 
 restore:
 	$(DOTNET) restore
@@ -130,6 +134,9 @@ stats-runs:
 
 stats-summary:
 	$(DOTNET) run --project $(PROJECT) -- stats summary $(RUN) --db $(DB)
+
+stats-profile:
+	$(DOTNET) run --project $(PROJECT) -- stats profile $(RUN) --limit $(LIMIT) --phrase-limit $(PHRASE_LIMIT) --min-phrase-count $(MIN_PHRASE_COUNT) --min-phrase-chapters $(MIN_PHRASE_CHAPTERS) --db $(DB)
 
 stats-books:
 	$(DOTNET) run --project $(PROJECT) -- stats books $(RUN) --db $(DB)

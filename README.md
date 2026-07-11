@@ -14,6 +14,7 @@ It is CLI-first, testable, and stores analysis data in SQLite so that corpora ca
 - source-book lists for aggregate corpus runs
 - word distribution by book
 - word comparison between analysis runs
+- compact corpus profiles for quick run validation
 - relative difficulty profiles for analysis runs
 - collocations with content/function filters
 - repeated phrase mining
@@ -77,6 +78,7 @@ make analyze-it
 ```powershell
 make stats-runs LIMIT=10
 make stats-summary RUN=1
+make stats-profile RUN=1 LIMIT=10 PHRASE_LIMIT=10
 make stats-books RUN=1
 make stats-words RUN=1 LIMIT=25
 make stats-content RUN=1 LIMIT=25
@@ -150,6 +152,8 @@ make inspect-run RUN=1
 dotnet run --project src/CorpusLens.Cli -- corpus create "English Literature" --language en --db ./data/corpuslens.db
 
 dotnet run --project src/CorpusLens.Cli -- analyze-epub-folder ./books/en --language en --corpus "English Literature" --db ./data/corpuslens.db --out ./artifacts/en
+
+dotnet run --project src/CorpusLens.Cli -- stats profile 1 --limit 10 --phrase-limit 10 --db ./data/corpuslens.db
 
 dotnet run --project src/CorpusLens.Cli -- stats word-books 1 "whale" --limit 30 --db ./data/corpuslens.db
 
