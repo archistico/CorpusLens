@@ -193,6 +193,74 @@ public sealed class SqliteCorpusStoreTests
 
 
     [Fact]
+    public async Task SaveAnalysisRunAsync_ShouldPersistTokenIndex()
+    {
+        using TestDatabase database = new();
+        string sourceFile = database.CreateSourceFile("alice.epub", "fake epub content");
+        SqliteCorpusStore store = new(database.Path);
+        StoredCorpus corpus = await store.CreateCorpusAsync("English Literature", "en");
+
+        ImportedBook book = new(
+            "book-1",
+            "Alice",
+            "Lewis Carroll",
+            "en",
+            sourceFile,
+            new[]
+            {
+                new ImportedChapter(1, "Chapter I", "chapter1.xhtml", string.Empty, "Hello, Alice. The rabbit saw Alice.")
+            });
+
+        StoredBookImport storedImport = await store.SaveImportedBookAsync(corpus.Id, book);
+        CorpusAnalysisResult analysis = new(
+            new CorpusSummary(1, 2, 8, 6, 5, 3.0, 4.0),
+            new[]
+            {
+                new WordFrequency("alice", 2, 1, 333333.33, false),
+                new WordFrequency("hello", 1, 1, 166666.67, false),
+                new WordFrequency("the", 1, 1, 166666.67, true),
+                new WordFrequency("rabbit", 1, 1, 166666.67, false),
+                new WordFrequency("saw", 1, 1, 166666.67, false)
+            },
+            Array.Empty<NGramFrequency>(),
+            Array.Empty<NextWordFrequency>(),
+            Array.Empty<AnalyzedSentence>());
+
+        StoredAnalysisRun run = await store.SaveAnalysisRunAsync(
+            corpus.Id,
+            storedImport.Book.Id,
+            new AnalysisSettings(),
+            analysis,
+            "report.md",
+            "words.csv",
+            "ngrams.csv",
+            "next_words.csv",
+            "extracted_text.txt");
+
+        StoredTokenIndexSummary? summary = await store.GetTokenIndexSummaryAsync(run.Id);
+        IReadOnlyList<StoredTokenOccurrence> aliceOccurrences = await store.ListTokenOccurrencesAsync(run.Id, "ALICE", limit: 10);
+
+        Assert.NotNull(summary);
+        Assert.Equal(6, summary!.TokenCount);
+        Assert.Equal(6, summary.WordTokenCount);
+        Assert.Equal(5, summary.DistinctTokenCount);
+        Assert.Equal(1, summary.StopWordTokenCount);
+        Assert.Equal(5, summary.ContentTokenCount);
+        Assert.Equal(1, summary.ChapterCount);
+        Assert.Equal(2, aliceOccurrences.Count);
+        Assert.All(aliceOccurrences, occurrence =>
+        {
+            Assert.Equal(run.Id, occurrence.AnalysisRunId);
+            Assert.Equal("alice", occurrence.NormalizedToken);
+            Assert.False(occurrence.IsStopWord);
+            Assert.True(occurrence.IsWord);
+        });
+        Assert.Equal(2, aliceOccurrences[0].ChapterPosition);
+        Assert.Equal(6, aliceOccurrences[1].ChapterPosition);
+    }
+
+
+    [Fact]
     public async Task ListWordContextsAsync_ShouldReturnKwicContextsFromStoredChapters()
     {
         using TestDatabase database = new();

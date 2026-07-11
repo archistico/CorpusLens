@@ -324,6 +324,7 @@ public sealed class SqliteCorpusStore
             await SaveNGramStatisticsAsync(connection, transaction, analysisRunId, corpusId, bookId, analysis.NGrams, cancellationToken).ConfigureAwait(false);
             await SaveNextWordStatisticsAsync(connection, transaction, analysisRunId, corpusId, bookId, analysis.NextWords, cancellationToken).ConfigureAwait(false);
             await SaveSentenceCategoryStatisticsAsync(connection, transaction, analysisRunId, corpusId, bookId, analysis.Sentences, cancellationToken).ConfigureAwait(false);
+            await SaveTokenOccurrencesAsync(connection, transaction, analysisRunId, corpusId, bookId, analysis.Words, cancellationToken).ConfigureAwait(false);
 
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -490,6 +491,101 @@ public sealed class SqliteCorpusStore
 
         return books;
     }
+
+    public async Task<StoredTokenIndexSummary?> GetTokenIndexSummaryAsync(
+        long analysisRunId,
+        CancellationToken cancellationToken = default)
+    {
+        await InitializeAsync(cancellationToken).ConfigureAwait(false);
+
+        await using SqliteConnection connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await EnableForeignKeysAsync(connection, cancellationToken).ConfigureAwait(false);
+
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT
+                AnalysisRunId,
+                COUNT(*) AS TokenCount,
+                SUM(CASE WHEN IsWord <> 0 THEN 1 ELSE 0 END) AS WordTokenCount,
+                COUNT(DISTINCT NormalizedToken) AS DistinctTokenCount,
+                SUM(CASE WHEN IsStopWord <> 0 THEN 1 ELSE 0 END) AS StopWordTokenCount,
+                SUM(CASE WHEN IsWord <> 0 AND IsStopWord = 0 THEN 1 ELSE 0 END) AS ContentTokenCount,
+                COUNT(DISTINCT ChapterId) AS ChapterCount
+            FROM TokenOccurrence
+            WHERE AnalysisRunId = $analysisRunId
+            GROUP BY AnalysisRunId;
+            """;
+        AddParameter(command, "$analysisRunId", analysisRunId);
+
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        return new StoredTokenIndexSummary(
+            reader.GetInt64(0),
+            Convert.ToInt32(reader.GetInt64(1), CultureInfo.InvariantCulture),
+            Convert.ToInt32(reader.GetInt64(2), CultureInfo.InvariantCulture),
+            Convert.ToInt32(reader.GetInt64(3), CultureInfo.InvariantCulture),
+            Convert.ToInt32(reader.GetInt64(4), CultureInfo.InvariantCulture),
+            Convert.ToInt32(reader.GetInt64(5), CultureInfo.InvariantCulture),
+            Convert.ToInt32(reader.GetInt64(6), CultureInfo.InvariantCulture));
+    }
+
+    public async Task<IReadOnlyList<StoredTokenOccurrence>> ListTokenOccurrencesAsync(
+        long analysisRunId,
+        string normalizedToken,
+        int limit = 50,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(normalizedToken);
+        await InitializeAsync(cancellationToken).ConfigureAwait(false);
+        int safeLimit = NormalizeLimit(limit);
+        string normalized = NormalizeContextWord(normalizedToken);
+
+        List<StoredTokenOccurrence> occurrences = new();
+
+        await using SqliteConnection connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await EnableForeignKeysAsync(connection, cancellationToken).ConfigureAwait(false);
+
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT
+                AnalysisRunId,
+                CorpusId,
+                BookId,
+                ChapterId,
+                ChapterOrderIndex,
+                RunPosition,
+                ChapterPosition,
+                TokenText,
+                NormalizedToken,
+                IsWord,
+                IsStopWord,
+                StartOffset,
+                EndOffset
+            FROM TokenOccurrence
+            WHERE AnalysisRunId = $analysisRunId
+              AND NormalizedToken = $normalizedToken
+            ORDER BY RunPosition
+            LIMIT $limit;
+            """;
+        AddParameter(command, "$analysisRunId", analysisRunId);
+        AddParameter(command, "$normalizedToken", normalized);
+        AddParameter(command, "$limit", safeLimit);
+
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            occurrences.Add(ReadTokenOccurrence(reader));
+        }
+
+        return occurrences;
+    }
+
 
     public async Task<IReadOnlyList<StoredWordBookStatistic>> ListWordBookDistributionAsync(
         long analysisRunId,
@@ -1317,6 +1413,107 @@ public sealed class SqliteCorpusStore
         }
     }
 
+    private static async Task SaveTokenOccurrencesAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        long analysisRunId,
+        long corpusId,
+        long bookId,
+        IReadOnlyList<WordFrequency> words,
+        CancellationToken cancellationToken)
+    {
+        HashSet<string> stopWords = words
+            .Where(word => word.IsStopWord)
+            .Select(word => word.Word)
+            .ToHashSet(StringComparer.Ordinal);
+
+        List<ChapterTokenIndexSource> chapters = new();
+        await using (SqliteCommand selectCommand = connection.CreateCommand())
+        {
+            selectCommand.Transaction = transaction;
+            selectCommand.CommandText = """
+                SELECT Id, OrderIndex, CleanText
+                FROM Chapter
+                WHERE BookId = $bookId
+                ORDER BY OrderIndex;
+                """;
+            AddParameter(selectCommand, "$bookId", bookId);
+
+            await using SqliteDataReader reader = await selectCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                chapters.Add(new ChapterTokenIndexSource(
+                    reader.GetInt64(0),
+                    reader.GetInt32(1),
+                    reader.GetString(2)));
+            }
+        }
+
+        if (chapters.Count == 0)
+        {
+            return;
+        }
+
+        await using SqliteCommand insertCommand = connection.CreateCommand();
+        insertCommand.Transaction = transaction;
+        insertCommand.CommandText = """
+            INSERT INTO TokenOccurrence
+                (AnalysisRunId, CorpusId, BookId, ChapterId, ChapterOrderIndex, RunPosition, ChapterPosition,
+                 TokenText, NormalizedToken, IsWord, IsStopWord, StartOffset, EndOffset)
+            VALUES
+                ($analysisRunId, $corpusId, $bookId, $chapterId, $chapterOrderIndex, $runPosition, $chapterPosition,
+                 $tokenText, $normalizedToken, $isWord, $isStopWord, $startOffset, $endOffset);
+            """;
+
+        SqliteParameter analysisRunIdParameter = insertCommand.Parameters.Add("$analysisRunId", SqliteType.Integer);
+        SqliteParameter corpusIdParameter = insertCommand.Parameters.Add("$corpusId", SqliteType.Integer);
+        SqliteParameter bookIdParameter = insertCommand.Parameters.Add("$bookId", SqliteType.Integer);
+        SqliteParameter chapterIdParameter = insertCommand.Parameters.Add("$chapterId", SqliteType.Integer);
+        SqliteParameter chapterOrderIndexParameter = insertCommand.Parameters.Add("$chapterOrderIndex", SqliteType.Integer);
+        SqliteParameter runPositionParameter = insertCommand.Parameters.Add("$runPosition", SqliteType.Integer);
+        SqliteParameter chapterPositionParameter = insertCommand.Parameters.Add("$chapterPosition", SqliteType.Integer);
+        SqliteParameter tokenTextParameter = insertCommand.Parameters.Add("$tokenText", SqliteType.Text);
+        SqliteParameter normalizedTokenParameter = insertCommand.Parameters.Add("$normalizedToken", SqliteType.Text);
+        SqliteParameter isWordParameter = insertCommand.Parameters.Add("$isWord", SqliteType.Integer);
+        SqliteParameter isStopWordParameter = insertCommand.Parameters.Add("$isStopWord", SqliteType.Integer);
+        SqliteParameter startOffsetParameter = insertCommand.Parameters.Add("$startOffset", SqliteType.Integer);
+        SqliteParameter endOffsetParameter = insertCommand.Parameters.Add("$endOffset", SqliteType.Integer);
+
+        analysisRunIdParameter.Value = analysisRunId;
+        corpusIdParameter.Value = corpusId;
+        bookIdParameter.Value = bookId;
+        isWordParameter.Value = 1;
+        insertCommand.Prepare();
+
+        int runPosition = 0;
+        foreach (ChapterTokenIndexSource chapter in chapters)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            MatchCollection matches = WordContextTokenRegex.Matches(chapter.CleanText);
+            int chapterPosition = 0;
+
+            foreach (Match match in matches)
+            {
+                string normalizedToken = NormalizeContextWord(match.Value);
+                runPosition++;
+                chapterPosition++;
+
+                chapterIdParameter.Value = chapter.Id;
+                chapterOrderIndexParameter.Value = chapter.OrderIndex;
+                runPositionParameter.Value = runPosition;
+                chapterPositionParameter.Value = chapterPosition;
+                tokenTextParameter.Value = match.Value;
+                normalizedTokenParameter.Value = normalizedToken;
+                isStopWordParameter.Value = stopWords.Contains(normalizedToken) ? 1 : 0;
+                startOffsetParameter.Value = match.Index;
+                endOffsetParameter.Value = match.Index + match.Length;
+
+                await insertCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+        }
+    }
+
+
     private static async Task SaveSentenceCategoryStatisticsAsync(
         SqliteConnection connection,
         SqliteTransaction transaction,
@@ -1829,6 +2026,24 @@ public sealed class SqliteCorpusStore
             reader.GetDouble(6));
     }
 
+    private static StoredTokenOccurrence ReadTokenOccurrence(SqliteDataReader reader)
+    {
+        return new StoredTokenOccurrence(
+            reader.GetInt64(0),
+            reader.GetInt64(1),
+            reader.GetInt64(2),
+            reader.GetInt64(3),
+            reader.GetInt32(4),
+            reader.GetInt32(5),
+            reader.GetInt32(6),
+            reader.GetString(7),
+            reader.GetString(8),
+            reader.GetInt32(9) != 0,
+            reader.GetInt32(10) != 0,
+            reader.GetInt32(11),
+            reader.GetInt32(12));
+    }
+
     private static string FormatDateTime(DateTimeOffset value)
     {
         return value.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
@@ -1904,6 +2119,12 @@ public sealed class SqliteCorpusStore
 
         return builder.ToString();
     }
+
+    private sealed record ChapterTokenIndexSource(
+        long Id,
+        int OrderIndex,
+        string CleanText);
+
 
     private sealed record WordContextToken(
         int StartOffset,
@@ -2228,5 +2449,32 @@ public sealed class SqliteCorpusStore
         );
 
         CREATE INDEX IF NOT EXISTS IX_SentenceCategoryStatistic_AnalysisRunId ON SentenceCategoryStatistic (AnalysisRunId);
+
+        CREATE TABLE IF NOT EXISTS TokenOccurrence
+        (
+            Id INTEGER PRIMARY KEY AUTOINCREMENT,
+            AnalysisRunId INTEGER NOT NULL,
+            CorpusId INTEGER NOT NULL,
+            BookId INTEGER NOT NULL,
+            ChapterId INTEGER NOT NULL,
+            ChapterOrderIndex INTEGER NOT NULL,
+            RunPosition INTEGER NOT NULL,
+            ChapterPosition INTEGER NOT NULL,
+            TokenText TEXT NOT NULL,
+            NormalizedToken TEXT NOT NULL,
+            IsWord INTEGER NOT NULL DEFAULT 1,
+            IsStopWord INTEGER NOT NULL DEFAULT 0,
+            StartOffset INTEGER NOT NULL,
+            EndOffset INTEGER NOT NULL,
+            FOREIGN KEY (AnalysisRunId) REFERENCES AnalysisRun(Id) ON DELETE CASCADE,
+            FOREIGN KEY (CorpusId) REFERENCES Corpus(Id) ON DELETE CASCADE,
+            FOREIGN KEY (BookId) REFERENCES Book(Id) ON DELETE CASCADE,
+            FOREIGN KEY (ChapterId) REFERENCES Chapter(Id) ON DELETE CASCADE,
+            UNIQUE (AnalysisRunId, RunPosition)
+        );
+
+        CREATE INDEX IF NOT EXISTS IX_TokenOccurrence_AnalysisRunId_RunPosition ON TokenOccurrence (AnalysisRunId, RunPosition);
+        CREATE INDEX IF NOT EXISTS IX_TokenOccurrence_AnalysisRunId_NormalizedToken ON TokenOccurrence (AnalysisRunId, NormalizedToken, RunPosition);
+        CREATE INDEX IF NOT EXISTS IX_TokenOccurrence_ChapterId_ChapterPosition ON TokenOccurrence (ChapterId, ChapterPosition);
         """;
 }

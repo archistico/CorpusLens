@@ -1276,3 +1276,7 @@ Added explicit language profiles for `en`, `it`, `fr` and `de`. Difficulty thres
 ## Milestone 16 — Corpus profile / Italian corpus validation
 
 Added `stats profile <runId>` and `make stats-profile` as a compact run validation view. It combines run metadata, source books, core metrics, difficulty profile, top content/function words and recurring phrases with conservative phrase filters. The command is useful for quickly checking Italian and English folder runs after import.
+
+## Milestone 17.1 — Token index schema + save
+
+Added persistent `TokenOccurrence` storage and `stats token-index <runId>` for validation. Existing KWIC, collocation, phrase and word-book queries still use the proven chapter-text paths; later milestones can migrate them one at a time.

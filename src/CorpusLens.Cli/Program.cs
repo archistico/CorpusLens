@@ -251,6 +251,7 @@ public static class Program
             "summary" => await PrintAnalysisRunSummaryAsync(subCommandArgs).ConfigureAwait(false),
             "profile" => await PrintRunProfileAsync(subCommandArgs).ConfigureAwait(false),
             "books" => await PrintAnalysisRunBooksAsync(subCommandArgs).ConfigureAwait(false),
+            "token-index" => await PrintTokenIndexAsync(subCommandArgs).ConfigureAwait(false),
             "word-books" => await PrintWordBookDistributionAsync(subCommandArgs).ConfigureAwait(false),
             "compare-word" => await PrintCompareWordAsync(subCommandArgs).ConfigureAwait(false),
             "compare-words" => await PrintCompareWordsAsync(subCommandArgs).ConfigureAwait(false),
@@ -479,6 +480,48 @@ public static class Program
             Console.WriteLine($"{book.OrderIndex,3}  {TrimForColumn(book.Title, 32),-32}  {TrimForColumn(book.Author, 24),-24}  {book.ChapterCount,8}  {book.CharacterCount,10}");
         }
 
+        return 0;
+    }
+
+
+    private static async Task<int> PrintTokenIndexAsync(string[] args)
+    {
+        if (!TryReadRunId(args, out long analysisRunId))
+        {
+            Console.Error.WriteLine("Usage: stats token-index <runId> [--db <file>]");
+            return 1;
+        }
+
+        CommandLineOptions options = CommandLineOptions.Parse(args.Skip(1).ToArray());
+        SqliteCorpusStore store = new(options.Get("db", DefaultDatabasePath()));
+        StoredAnalysisRunSummary? run = await store
+            .GetAnalysisRunSummaryAsync(analysisRunId)
+            .ConfigureAwait(false);
+        if (run is null)
+        {
+            Console.Error.WriteLine($"Analysis run {analysisRunId} was not found.");
+            return 1;
+        }
+
+        StoredTokenIndexSummary? summary = await store
+            .GetTokenIndexSummaryAsync(analysisRunId)
+            .ConfigureAwait(false);
+
+        Console.WriteLine($"Token index for run {analysisRunId}");
+        Console.WriteLine($"Run:          {run.CorpusName} / {run.BookTitle}");
+        if (summary is null)
+        {
+            Console.WriteLine("Status:       not indexed");
+            return 0;
+        }
+
+        Console.WriteLine("Status:       indexed");
+        Console.WriteLine($"Tokens:       {summary.TokenCount}");
+        Console.WriteLine($"Word tokens:  {summary.WordTokenCount}");
+        Console.WriteLine($"Distinct:     {summary.DistinctTokenCount}");
+        Console.WriteLine($"Content:      {summary.ContentTokenCount}");
+        Console.WriteLine($"Function:     {summary.StopWordTokenCount}");
+        Console.WriteLine($"Chapters:     {summary.ChapterCount}");
         return 0;
     }
 
@@ -1393,6 +1436,7 @@ public static class Program
         Console.WriteLine("  stats summary <runId> [--db <file>]");
         Console.WriteLine("  stats profile <runId> [--limit <n>] [--phrase-limit <n>] [--min-phrase-count <n>] [--min-phrase-chapters <n>] [--db <file>]");
         Console.WriteLine("  stats books <runId> [--db <file>]");
+        Console.WriteLine("  stats token-index <runId> [--db <file>]");
         Console.WriteLine("  stats word-books <runId> <word> [--limit <n>] [--db <file>]");
         Console.WriteLine("  stats compare-word <leftRunId> <rightRunId> <word> [--db <file>]");
         Console.WriteLine("  stats compare-words <leftRunId> <rightRunId> [--limit <n>] [--min-count <n>] [--shared-only|--exclusive-only] [--content-only|--function-only] [--db <file>]");
@@ -1435,6 +1479,7 @@ public static class Program
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats summary 1");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats profile 1 --limit 10 --phrase-limit 10");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats books 1");
+        Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats token-index 1");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats word-books 1 alice --limit 25");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats compare-word 1 2 love");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats compare-words 1 2 --content-only --shared-only --min-count 5 --limit 25");
