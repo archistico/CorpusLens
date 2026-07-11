@@ -1,45 +1,32 @@
 # CorpusLens — Roadmap nuove milestone
 
-Versione: 0.2
+Versione: 0.3
 Stato: pianificazione operativa
-Ambito: milestone successive alla persistenza statistiche, analisi cartella EPUB, stopword profile, word detail e KWIC.
+Ambito: storico delle milestone implementate e pianificazione dell’evoluzione desktop.
 
 ---
 
 ## 1. Stato attuale del progetto
 
-CorpusLens dispone già di una base funzionante per:
+La base corrente validata arriva alla **Milestone 18.8 — Books explorer**.
 
-* analisi di singolo file EPUB;
-* analisi aggregata di una cartella EPUB;
-* estrazione testo pulito da EPUB;
-* rimozione boilerplate Project Gutenberg;
-* rimozione front matter / indice iniziale nei casi noti;
-* analisi TXT;
-* report Markdown;
-* export CSV;
-* persistenza SQLite minima;
-* persistenza statistiche principali;
-* navigazione delle run salvate;
-* summary delle run;
-* Makefile per comandi ricorrenti in ambiente Windows/PowerShell;
-* prime viste su parole, n-grammi, parole successive e categorie frase;
-* stopword profile iniziali;
-* distinzione tra parole contenuto e parole funzione;
-* dettaglio parola;
-* KWIC base;
-* gestione EPUB corrotti durante l'analisi cartella tramite skip e `import_failures.csv`.
+CorpusLens dispone di:
 
-Le ultime milestone prodotte devono ancora essere consolidate localmente:
+* importazione e analisi di file EPUB e TXT;
+* analisi aggregate di cartelle EPUB;
+* pulizia del testo e diagnostica di importazione;
+* profili linguistici per inglese, italiano, francese e tedesco;
+* frequenze, parole contenuto/funzione, n-grammi e parole successive;
+* dettaglio parola, KWIC e distribuzione per libro;
+* collocazioni e phrase mining;
+* confronto lessicale e confronto di difficoltà tra run;
+* indice persistente dei token con fallback per run legacy;
+* persistenza SQLite di corpus, libri, capitoli, run e statistiche;
+* CLI completa per analisi e interrogazione;
+* applicazione desktop Avalonia read-only con apertura database, elenco run, dashboard, word explorer, collocations explorer, phrase explorer, confronto run e Books explorer;
+* caricamento asincrono delle principali viste desktop.
 
-```text
-Milestone 5   — Stopword profiles
-Milestone 5.1 — Word detail
-Milestone 5.2 — KWIC contexts
-Milestone 5.4 — Invalid EPUB handling
-```
-
-La priorità immediata è quindi verificare e stabilizzare queste funzioni prima di introdurre nuove feature strutturali.
+La prossima fase pianificata copre le Milestone **18.9–18.15**: consolidamento dell'architettura desktop, esplorazione capitoli e n-grammi, accesso a report/export, gestione corpus, analisi EPUB dalla UI e distribuzione Windows.
 
 ---
 
@@ -1106,9 +1093,9 @@ Ordine consigliato:
 
 ---
 
-# Priorità operative immediate
+# Priorità operative storiche — archivio
 
-Le prossime tre milestone da sviluppare realmente sono:
+Questa sezione conserva le priorità definite nelle prime fasi del progetto. Le milestone indicate sono state successivamente implementate e restano qui come tracciamento storico:
 
 ## Priorità 1
 
@@ -1351,3 +1338,256 @@ Desktop UI panel for comparing two runs: optional single-word comparison, top le
 ## Milestone 18.8 — Books explorer
 
 Desktop source-books explorer for the selected run, with aggregate counts, ordered book list and metadata details. It reuses `AnalysisRunQueryService.ListRunBooksAsync`, including the existing fallback for legacy single-book runs.
+
+---
+
+# Fase 8 — Evoluzione della UI desktop
+
+Le milestone seguenti sono **pianificate** e partono dalla base validata della Milestone 18.8. L'ordine proposto riduce il rischio di regressioni: prima si consolida l'architettura desktop, poi si completano le viste di esplorazione e infine si introducono le operazioni di scrittura e l'analisi EPUB dalla UI.
+
+## Milestone 18.9 — Consolidamento architettura Desktop
+
+### Stato
+
+PIANIFICATA.
+
+### Obiettivo
+
+Ridurre la complessità crescente di `MainWindowViewModel` e `MainWindow.axaml` prima di aggiungere nuove funzioni desktop.
+
+### Attività previste
+
+* separare la finestra principale in viste e ViewModel dedicati per dashboard, libri, parole, collocazioni, frasi e confronto run;
+* mantenere il flusso `Desktop → Application → Infrastructure`, senza accesso SQLite diretto dalla UI;
+* centralizzare stato di caricamento, messaggi di errore e progress indicator;
+* introdurre comandi asincroni cancellabili dove utile;
+* definire servizi desktop piccoli e testabili per selezione run e navigazione;
+* aggiungere test unitari per i ViewModel estratti;
+* preservare comportamento e layout già validati nella Milestone 18.8.
+
+### Criteri di accettazione
+
+* build e test completati senza errori;
+* nessuna regressione nelle viste desktop esistenti;
+* `MainWindowViewModel` non contiene più tutta la logica delle singole aree funzionali;
+* caricamento asincrono ed error handling risultano uniformi in tutte le viste;
+* i nuovi ViewModel principali dispongono di test dedicati.
+
+---
+
+## Milestone 18.10 — Chapters explorer
+
+### Stato
+
+PIANIFICATA.
+
+### Obiettivo
+
+Estendere la navigazione dei dati dalla run al libro e dal libro ai capitoli salvati:
+
+```text
+Run → Book → Chapters → Text preview
+```
+
+### Funzioni previste
+
+* elenco ordinato dei capitoli del libro selezionato;
+* titolo, posizione e dimensione di ogni capitolo;
+* anteprima del testo pulito salvato nel database;
+* conteggio di caratteri, parole e frasi;
+* ricerca testuale nel capitolo visualizzato;
+* evidenziazione dei capitoli molto corti, molto lunghi o potenzialmente sospetti;
+* caricamento asincrono e cancellabile;
+* supporto alle run aggregate e alle run legacy compatibili.
+
+### Criteri di accettazione
+
+* la selezione di un libro carica i relativi capitoli senza bloccare la UI;
+* l'ordinamento rispetta la sequenza originale dell'EPUB;
+* l'anteprima usa esclusivamente il testo pulito già persistito;
+* i casi senza capitoli o con dati legacy sono gestiti con messaggi chiari;
+* nessuna query SQL viene duplicata nel progetto Desktop.
+
+---
+
+## Milestone 18.11 — N-gram explorer
+
+### Stato
+
+PIANIFICATA.
+
+### Obiettivo
+
+Portare nella UI desktop l'esplorazione di bigrammi, trigrammi e altri n-grammi già disponibili nei dati di analisi.
+
+### Funzioni previste
+
+* scelta della dimensione `n`;
+* ordinamento per frequenza;
+* soglia minima di occorrenze;
+* limite massimo di risultati;
+* ricerca o filtro per termine contenuto;
+* conteggio dei documenti o capitoli in cui compare l'n-gramma, quando disponibile;
+* filtri content/function quando linguisticamente appropriati;
+* copia o esportazione della selezione.
+
+### Criteri di accettazione
+
+* bigrammi e trigrammi sono consultabili senza usare il terminale;
+* filtri e ordinamento producono risultati coerenti con la CLI;
+* il caricamento non blocca la UI;
+* le query restano nel livello Application/Infrastructure;
+* i risultati vuoti e i parametri non validi sono gestiti esplicitamente.
+
+---
+
+## Milestone 18.12 — Report ed export
+
+### Stato
+
+PIANIFICATA.
+
+### Obiettivo
+
+Rendere accessibili dalla UI desktop i report e gli artefatti generati durante l'analisi.
+
+### Funzioni previste
+
+* apertura di `report.md` con l'applicazione predefinita;
+* apertura della cartella degli artefatti della run;
+* apertura dei CSV disponibili, tra cui `words.csv`, `ngrams.csv` e `next_words.csv`;
+* apertura di `import_diagnostics.md` e `import_failures.csv`, quando presenti;
+* indicazione chiara dei file mancanti o dei percorsi non più validi;
+* riepilogo degli artefatti disponibili per la run selezionata;
+* nessuna modifica automatica ai file esportati.
+
+### Criteri di accettazione
+
+* ogni artefatto esistente può essere aperto dalla UI;
+* un percorso mancante non causa crash;
+* il sistema distingue tra artefatto non generato e file successivamente rimosso;
+* l'apertura usa le API del sistema operativo in modo sicuro;
+* il comportamento è coperto da test per la risoluzione dei percorsi.
+
+---
+
+## Milestone 18.13 — Gestione corpus
+
+### Stato
+
+PIANIFICATA.
+
+### Obiettivo
+
+Passare dalla sola consultazione delle run esistenti alla gestione dei corpus dal desktop.
+
+### Funzioni previste
+
+* elenco dei corpus salvati;
+* creazione di un corpus con nome e lingua;
+* visualizzazione delle run associate a ciascun corpus;
+* validazione dei codici lingua supportati;
+* controllo di coerenza tra corpus scelto e lingua dell'analisi;
+* eventuale rinomina del corpus, se compatibile con il modello dati;
+* servizi applicativi di scrittura dedicati;
+* conferme esplicite per le operazioni che modificano dati persistenti.
+
+### Criteri di accettazione
+
+* un corpus può essere creato dalla UI senza usare la CLI;
+* nomi vuoti, duplicati o lingue non supportate sono rifiutati con messaggi chiari;
+* la UI non esegue SQL direttamente;
+* le operazioni di scrittura sono transazionali e testate;
+* le run esistenti continuano a essere consultabili senza regressioni.
+
+---
+
+## Milestone 18.14 — Analisi EPUB dalla UI
+
+### Stato
+
+PIANIFICATA.
+
+### Obiettivo
+
+Consentire l'avvio completo di una nuova analisi EPUB dal desktop, mantenendo la CLI come superficie supportata e riutilizzando la stessa pipeline applicativa.
+
+### Funzioni previste
+
+* selezione di una cartella contenente EPUB;
+* scelta del corpus e della lingua;
+* scelta della cartella di output;
+* opzione per la scansione ricorsiva;
+* validazione preventiva di percorsi e parametri;
+* avvio asincrono dell'analisi;
+* avanzamento, fase corrente e messaggi di stato;
+* annullamento cooperativo;
+* riepilogo di file importati, saltati e falliti;
+* collegamento ai diagnostici di importazione;
+* aggiornamento automatico della lista run e selezione della nuova run al termine.
+
+### Criteri di accettazione
+
+* un'analisi completa può essere avviata e completata senza terminale;
+* la finestra resta reattiva durante l'elaborazione;
+* l'annullamento non lascia run o dati parziali incoerenti;
+* errori su singoli EPUB rispettano la politica di skip già adottata dalla CLI;
+* CLI e Desktop usano la stessa pipeline applicativa;
+* la nuova run è immediatamente esplorabile nella dashboard.
+
+---
+
+## Milestone 18.15 — Stabilizzazione e distribuzione
+
+### Stato
+
+PIANIFICATA.
+
+### Obiettivo
+
+Preparare CorpusLens Desktop per un utilizzo regolare e per la distribuzione su Windows.
+
+### Funzioni previste
+
+* memorizzazione dell'ultimo database aperto;
+* elenco dei database recenti;
+* persistenza delle preferenze desktop non sensibili;
+* gestione uniforme degli errori non gestiti;
+* logging diagnostico locale;
+* test di integrazione dei principali flussi desktop;
+* pubblicazione `win-x64`;
+* definizione di versione, icona e metadati applicativi;
+* pacchetto distribuibile e istruzioni di installazione/aggiornamento;
+* breve manuale utente per apertura database, esplorazione e nuova analisi.
+
+### Criteri di accettazione
+
+* l'applicazione pubblicata si avvia su una macchina Windows supportata senza SDK .NET installato, se distribuita self-contained;
+* apertura database, navigazione e analisi EPUB sono coperte da smoke test;
+* impostazioni e percorsi recenti sono recuperati correttamente al riavvio;
+* gli errori critici producono un messaggio utile e un log diagnostico;
+* il pacchetto non contiene database, libri o artefatti locali dell'ambiente di sviluppo.
+
+---
+
+## Sequenza operativa pianificata
+
+```text
+18.9   Consolidamento architettura Desktop
+18.10  Chapters explorer
+18.11  N-gram explorer
+18.12  Report ed export
+18.13  Gestione corpus
+18.14  Analisi EPUB dalla UI
+18.15  Stabilizzazione e distribuzione
+```
+
+### Dipendenze principali
+
+* la Milestone 18.9 precede tutte le nuove viste per evitare ulteriore crescita monolitica della finestra principale;
+* la Milestone 18.10 completa la navigazione read-only `run → libro → capitolo`;
+* le Milestone 18.11 e 18.12 completano l'esplorazione e l'accesso agli output esistenti;
+* la Milestone 18.13 introduce i primi servizi applicativi di scrittura richiesti dalla UI;
+* la Milestone 18.14 dipende dalla gestione corpus e dalla disponibilità di una pipeline asincrona cancellabile;
+* la Milestone 18.15 chiude il ciclo con stabilizzazione, packaging e documentazione utente.
+
