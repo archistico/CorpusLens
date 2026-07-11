@@ -250,6 +250,7 @@ public static class Program
             "runs" => await PrintAnalysisRunsAsync(subCommandArgs).ConfigureAwait(false),
             "summary" => await PrintAnalysisRunSummaryAsync(subCommandArgs).ConfigureAwait(false),
             "profile" => await PrintRunProfileAsync(subCommandArgs).ConfigureAwait(false),
+            "health" => await PrintHealthAsync(subCommandArgs).ConfigureAwait(false),
             "books" => await PrintAnalysisRunBooksAsync(subCommandArgs).ConfigureAwait(false),
             "token-index" => await PrintTokenIndexAsync(subCommandArgs).ConfigureAwait(false),
             "word-books" => await PrintWordBookDistributionAsync(subCommandArgs).ConfigureAwait(false),
@@ -480,6 +481,108 @@ public static class Program
             Console.WriteLine($"{book.OrderIndex,3}  {TrimForColumn(book.Title, 32),-32}  {TrimForColumn(book.Author, 24),-24}  {book.ChapterCount,8}  {book.CharacterCount,10}");
         }
 
+        return 0;
+    }
+
+
+    private static async Task<int> PrintHealthAsync(string[] args)
+    {
+        if (!TryReadRunId(args, out long analysisRunId))
+        {
+            Console.Error.WriteLine("Usage: stats health <runId> [--db <file>]");
+            return 1;
+        }
+
+        CommandLineOptions options = CommandLineOptions.Parse(args.Skip(1).ToArray());
+        string databasePath = options.Get("db", DefaultDatabasePath());
+        SqliteCorpusStore store = new(databasePath);
+
+        StoredAnalysisRunSummary? run = await store
+            .GetAnalysisRunSummaryAsync(analysisRunId)
+            .ConfigureAwait(false);
+        if (run is null)
+        {
+            Console.Error.WriteLine($"Analysis run {analysisRunId} was not found.");
+            return 1;
+        }
+
+        StoredTokenIndexDiagnostics? diagnostics = await store
+            .GetTokenIndexDiagnosticsAsync(analysisRunId)
+            .ConfigureAwait(false);
+        IReadOnlyList<string> languageCodes = await ReadRunLanguageCodesAsync(store, analysisRunId)
+            .ConfigureAwait(false);
+
+        List<string> warnings = new();
+
+        Console.WriteLine($"CorpusLens health for run {analysisRunId}");
+        Console.WriteLine($"Run:          {run.CorpusName} / {run.BookTitle}");
+        Console.WriteLine($"Language:     {FormatLanguageCodes(languageCodes)}");
+        Console.WriteLine($"Status:       {run.Status}");
+        Console.WriteLine($"Database:     {databasePath}");
+        Console.WriteLine($"DB size:      {FormatFileSize(databasePath)}");
+        Console.WriteLine();
+        Console.WriteLine("Checks");
+        Console.WriteLine($"Run exists:             {HealthLabel(true)}");
+
+        bool completed = string.Equals(run.Status, "Completed", StringComparison.OrdinalIgnoreCase);
+        if (!completed)
+        {
+            warnings.Add($"run status is {run.Status}");
+        }
+        Console.WriteLine($"Run completed:          {HealthLabel(completed)}");
+
+        if (diagnostics is null || !diagnostics.IsIndexed)
+        {
+            warnings.Add("token index is missing; query fallback will be used");
+            Console.WriteLine($"Token index:            {HealthLabel(false)} not indexed");
+            Console.WriteLine($"Expected word tokens:   {run.WordTokenCount}");
+            Console.WriteLine("Query path:             fallback to stored chapter text");
+            Console.WriteLine();
+            Console.WriteLine($"Overall:                {HealthLabel(false)} warnings");
+            WriteHealthWarnings(warnings);
+            return 0;
+        }
+
+        bool tokenCoverageOk = diagnostics.WordTokenDelta == 0;
+        bool chaptersOk = diagnostics.IndexedChapterCount == diagnostics.ExpectedChapterCount;
+        bool sourceBooksOk = diagnostics.SourceBookCount == 0
+            ? diagnostics.IndexedBookCount > 0
+            : diagnostics.IndexedSourceBookCount == diagnostics.SourceBookCount;
+        bool positionsOk = diagnostics.RunPositionGapCount == 0;
+
+        if (!tokenCoverageOk)
+        {
+            warnings.Add($"token index delta is {FormatSignedInteger(diagnostics.WordTokenDelta)}");
+        }
+        if (!chaptersOk)
+        {
+            warnings.Add($"indexed chapters are {diagnostics.IndexedChapterCount} of {diagnostics.ExpectedChapterCount}");
+        }
+        if (!sourceBooksOk)
+        {
+            warnings.Add($"indexed source books are {diagnostics.IndexedSourceBookCount} of {diagnostics.SourceBookCount}");
+        }
+        if (!positionsOk)
+        {
+            warnings.Add($"run position gaps: {diagnostics.RunPositionGapCount}");
+        }
+
+        Console.WriteLine($"Token index:            {HealthLabel(true)} indexed");
+        Console.WriteLine($"Token coverage:         {HealthLabel(tokenCoverageOk)} {FormatProbability(diagnostics.WordTokenCoveragePercentage / 100.0)} ({diagnostics.IndexedWordTokenCount} of {diagnostics.ExpectedWordTokenCount})");
+        Console.WriteLine($"Chapter coverage:       {HealthLabel(chaptersOk)} {diagnostics.IndexedChapterCount} of {diagnostics.ExpectedChapterCount}");
+        Console.WriteLine($"Source book coverage:   {HealthLabel(sourceBooksOk)} {diagnostics.IndexedSourceBookCount} of {diagnostics.SourceBookCount}");
+        Console.WriteLine($"Run position gaps:      {HealthLabel(positionsOk)} {diagnostics.RunPositionGapCount}");
+        Console.WriteLine($"Run positions:          {FormatRunPositionRange(diagnostics).Trim()}");
+        Console.WriteLine();
+        Console.WriteLine("Query path");
+        Console.WriteLine($"KWIC:                   {(diagnostics.CanUseTokenIndexForContextQueries ? "token index" : "fallback")}");
+        Console.WriteLine($"Collocations:           {(diagnostics.CanUseTokenIndexForContextQueries ? "token index" : "fallback")}");
+        Console.WriteLine($"Phrases:                {(diagnostics.CanUseTokenIndexForContextQueries ? "token index" : "fallback")}");
+        Console.WriteLine($"Word-books:             {(diagnostics.CanUseTokenIndexForWordBookDistribution ? "token index" : "fallback")}");
+        Console.WriteLine();
+        bool ok = warnings.Count == 0;
+        Console.WriteLine($"Overall:                {HealthLabel(ok)} {(ok ? "OK" : "warnings")}");
+        WriteHealthWarnings(warnings);
         return 0;
     }
 
@@ -1453,6 +1556,7 @@ public static class Program
         Console.WriteLine("  stats runs [--corpus-id <id>] [--limit <n>] [--db <file>]");
         Console.WriteLine("  stats summary <runId> [--db <file>]");
         Console.WriteLine("  stats profile <runId> [--limit <n>] [--phrase-limit <n>] [--min-phrase-count <n>] [--min-phrase-chapters <n>] [--db <file>]");
+        Console.WriteLine("  stats health <runId> [--db <file>]");
         Console.WriteLine("  stats books <runId> [--db <file>]");
         Console.WriteLine("  stats token-index <runId> [--db <file>]");
         Console.WriteLine("  stats word-books <runId> <word> [--limit <n>] [--db <file>]");
@@ -1496,6 +1600,7 @@ public static class Program
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats runs --limit 10");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats summary 1");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats profile 1 --limit 10 --phrase-limit 10");
+        Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats health 1");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats books 1");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats token-index 1");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats word-books 1 alice --limit 25");
@@ -2043,6 +2148,26 @@ public static class Program
         }
 
         return scoreDifference > 0 ? "left" : "right";
+    }
+
+    private static string HealthLabel(bool ok)
+    {
+        return ok ? "OK" : "WARN";
+    }
+
+    private static void WriteHealthWarnings(IReadOnlyList<string> warnings)
+    {
+        if (warnings.Count == 0)
+        {
+            return;
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("Warnings");
+        foreach (string warning in warnings)
+        {
+            Console.WriteLine($"- {warning}");
+        }
     }
 
     private static string FormatFileSize(string path)

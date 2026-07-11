@@ -47,3 +47,25 @@ La classificazione iniziale è rule-based e prudente:
 - `Other`.
 
 Le categorie sono da considerare indicative, non linguisticamente perfette.
+
+## Token index and query paths
+
+Saved SQLite runs create a persistent `TokenOccurrence` index for word tokens.
+
+When the index is available, these queries use token positions:
+
+- `stats kwic`
+- `stats collocations`
+- `stats phrases`
+- `stats word-books`
+
+When the index is missing, the same commands fall back to stored chapter text. This keeps legacy databases readable.
+
+Use:
+
+```powershell
+make stats-health RUN=1
+make stats-token-index RUN=1
+```
+
+to check whether a run is indexed and which query path will be used.

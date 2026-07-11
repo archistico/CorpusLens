@@ -1301,3 +1301,7 @@ Added persistent `TokenOccurrence` storage and `stats token-index <runId>` for v
 ## Milestone 17.6 — Token index diagnostics and performance
 
 Added token-index diagnostics to `stats token-index` and SQLite indexes for token-index backed KWIC, collocations, phrase mining, and word-book distribution.
+
+## Milestone 17.7 — Token index consolidation
+
+Added `stats health <runId>` / `make stats-health` as a compact run health check, and documented token-index query paths and fallback behavior. No analysis behavior changed.

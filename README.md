@@ -80,6 +80,7 @@ make analyze-it
 make stats-runs LIMIT=10
 make stats-summary RUN=1
 make stats-profile RUN=1 LIMIT=10 PHRASE_LIMIT=10
+make stats-health RUN=1
 make stats-books RUN=1
 make stats-token-index RUN=1
 make stats-words RUN=1 LIMIT=25
@@ -96,11 +97,14 @@ make stats-kwic RUN=1 WORD="alice" LIMIT=10 CONTEXT=8
 make stats-next RUN=1 WORD="don't" LIMIT=25
 ```
 
-Token index diagnostics:
+Run health and token index diagnostics:
 
 ```powershell
+make stats-health RUN=1
 make stats-token-index RUN=1
 ```
+
+`stats health` is the compact check. `stats token-index` is the detailed token-index report.
 
 Token-index-backed queries, when the run is indexed:
 
@@ -173,6 +177,8 @@ dotnet run --project src/CorpusLens.Cli -- corpus create "English Literature" --
 dotnet run --project src/CorpusLens.Cli -- analyze-epub-folder ./books/en --language en --corpus "English Literature" --db ./data/corpuslens.db --out ./artifacts/en
 
 dotnet run --project src/CorpusLens.Cli -- stats profile 1 --limit 10 --phrase-limit 10 --db ./data/corpuslens.db
+
+dotnet run --project src/CorpusLens.Cli -- stats health 1 --db ./data/corpuslens.db
 
 dotnet run --project src/CorpusLens.Cli -- stats token-index 1 --db ./data/corpuslens.db
 
