@@ -1289,3 +1289,7 @@ Added persistent `TokenOccurrence` storage and `stats token-index <runId>` for v
 ## Milestone 17.3 — Collocations da token index
 
 `stats collocations` now uses `TokenOccurrence` when a run has a token index, with automatic fallback to the previous chapter-text implementation for legacy runs. Output remains unchanged; the query path now uses persisted token positions and keeps collocation windows inside chapter boundaries.
+
+## Milestone 17.4 — Phrase mining da token index
+
+`stats phrases` now uses `TokenOccurrence` when available, with fallback to the previous `CleanText` implementation for legacy runs. The command keeps the same output and filters, while phrase candidates are derived from persisted token positions and still checked against chapter text so phrases do not cross punctuation.

@@ -102,6 +102,14 @@ Token index:
 make stats-token-index RUN=1
 ```
 
+Token-index-backed queries, when the run is indexed:
+
+```powershell
+make stats-kwic RUN=1 WORD="piazza" LIMIT=10 CONTEXT=8
+make stats-collocations-content RUN=1 WORD="piazza" WINDOW=4 LIMIT=30 MIN_COUNT=1
+make stats-phrases-content-boundary RUN=1 MIN_N=2 MAX_N=5 MIN_COUNT=3 MIN_CHAPTERS=2 LONGEST_ONLY=--longest-only LIMIT=30
+```
+
 The token index is saved when an analysis run is persisted to SQLite. KWIC and collocations use it when available and fall back to the chapter-text path for legacy runs. Other query migrations will be done incrementally.
 
 Compare runs:

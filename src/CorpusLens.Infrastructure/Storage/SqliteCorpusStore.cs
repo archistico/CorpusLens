@@ -865,6 +865,21 @@ public sealed class SqliteCorpusStore
         int safeMaxN = Math.Clamp(maxN, safeMinN, 8);
         int safeMinCount = Math.Max(1, minCount);
         int safeLimit = NormalizeLimit(limit);
+        StoredTokenIndexSummary? tokenIndexSummary = await GetTokenIndexSummaryAsync(analysisRunId, cancellationToken)
+            .ConfigureAwait(false);
+        if (tokenIndexSummary is { TokenCount: > 0 })
+        {
+            return await ListPhrasesFromTokenIndexAsync(
+                    analysisRunId,
+                    run.BookId,
+                    safeMinN,
+                    safeMaxN,
+                    safeMinCount,
+                    safeLimit,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         IReadOnlyList<StoredChapter> chapters = await ListChaptersAsync(run.BookId, cancellationToken)
             .ConfigureAwait(false);
 
@@ -882,13 +897,101 @@ public sealed class SqliteCorpusStore
                 accumulators);
         }
 
-        return accumulators.Values
-            .Where(item => item.Count >= safeMinCount)
+        return BuildPhraseResult(accumulators.Values, totalWordTokenCount, safeMinCount, safeLimit);
+    }
+
+    private async Task<IReadOnlyList<StoredPhraseStatistic>> ListPhrasesFromTokenIndexAsync(
+        long analysisRunId,
+        long bookId,
+        int minN,
+        int maxN,
+        int minCount,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        IReadOnlyList<StoredChapter> chapters = await ListChaptersAsync(bookId, cancellationToken)
+            .ConfigureAwait(false);
+        Dictionary<long, string> cleanTextByChapterId = chapters.ToDictionary(
+            chapter => chapter.Id,
+            chapter => chapter.CleanText);
+
+        Dictionary<PhraseKey, PhraseAccumulator> accumulators = new();
+        int totalWordTokenCount = 0;
+        long? currentChapterId = null;
+        List<IndexedPhraseToken> currentChapterTokens = new();
+
+        void FlushCurrentChapter()
+        {
+            if (currentChapterId is null || currentChapterTokens.Count == 0)
+            {
+                currentChapterTokens.Clear();
+                return;
+            }
+
+            if (cleanTextByChapterId.TryGetValue(currentChapterId.Value, out string? cleanText))
+            {
+                AddPhrasesFromIndexedTokens(
+                    analysisRunId,
+                    cleanText,
+                    currentChapterTokens,
+                    minN,
+                    maxN,
+                    accumulators);
+            }
+
+            currentChapterTokens.Clear();
+        }
+
+        await using SqliteConnection connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await EnableForeignKeysAsync(connection, cancellationToken).ConfigureAwait(false);
+
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT ChapterId, NormalizedToken, StartOffset, EndOffset
+            FROM TokenOccurrence
+            WHERE AnalysisRunId = $analysisRunId
+              AND IsWord <> 0
+            ORDER BY ChapterOrderIndex, ChapterId, ChapterPosition;
+            """;
+        AddParameter(command, "$analysisRunId", analysisRunId);
+
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            long chapterId = reader.GetInt64(0);
+            if (currentChapterId is not null && chapterId != currentChapterId.Value)
+            {
+                FlushCurrentChapter();
+            }
+
+            currentChapterId = chapterId;
+            totalWordTokenCount++;
+            currentChapterTokens.Add(new IndexedPhraseToken(
+                Convert.ToInt32(reader.GetInt64(2), CultureInfo.InvariantCulture),
+                Convert.ToInt32(reader.GetInt64(3), CultureInfo.InvariantCulture),
+                reader.GetString(1)));
+        }
+
+        FlushCurrentChapter();
+
+        return BuildPhraseResult(accumulators.Values, totalWordTokenCount, minCount, limit);
+    }
+
+    private static IReadOnlyList<StoredPhraseStatistic> BuildPhraseResult(
+        IEnumerable<PhraseAccumulator> accumulators,
+        int totalWordTokenCount,
+        int minCount,
+        int limit)
+    {
+        return accumulators
+            .Where(item => item.Count >= minCount)
             .Select(item => item.ToStoredStatistic(totalWordTokenCount))
             .OrderByDescending(item => item.Count)
             .ThenByDescending(item => item.N)
             .ThenBy(item => item.Phrase, StringComparer.OrdinalIgnoreCase)
-            .Take(safeLimit)
+            .Take(limit)
             .ToArray();
     }
 
@@ -1888,6 +1991,53 @@ public sealed class SqliteCorpusStore
         return tokens.Count;
     }
 
+    private static void AddPhrasesFromIndexedTokens(
+        long analysisRunId,
+        string text,
+        IReadOnlyList<IndexedPhraseToken> tokens,
+        int minN,
+        int maxN,
+        IDictionary<PhraseKey, PhraseAccumulator> accumulators)
+    {
+        if (tokens.Count == 0)
+        {
+            return;
+        }
+
+        HashSet<PhraseKey> phrasesInChapter = new();
+        for (int n = minN; n <= maxN; n++)
+        {
+            if (tokens.Count < n)
+            {
+                continue;
+            }
+
+            for (int startIndex = 0; startIndex <= tokens.Count - n; startIndex++)
+            {
+                if (!CanBuildPhraseAcrossIndexedTokens(text, tokens, startIndex, n))
+                {
+                    continue;
+                }
+
+                string phrase = string.Join(' ', tokens.Skip(startIndex).Take(n).Select(token => token.NormalizedText));
+                PhraseKey key = new(n, phrase);
+                if (!accumulators.TryGetValue(key, out PhraseAccumulator? accumulator))
+                {
+                    accumulator = new PhraseAccumulator(analysisRunId, key);
+                    accumulators.Add(key, accumulator);
+                }
+
+                accumulator.Count++;
+                phrasesInChapter.Add(key);
+            }
+        }
+
+        foreach (PhraseKey key in phrasesInChapter)
+        {
+            accumulators[key].ChapterCount++;
+        }
+    }
+
     private static bool CanBuildPhraseAcrossTokens(
         string text,
         IReadOnlyList<WordContextToken> tokens,
@@ -1897,6 +2047,31 @@ public sealed class SqliteCorpusStore
         for (int index = startIndex; index < startIndex + n - 1; index++)
         {
             string separator = text[tokens[index].EndOffset..tokens[index + 1].StartOffset];
+            if (!separator.All(char.IsWhiteSpace))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool CanBuildPhraseAcrossIndexedTokens(
+        string text,
+        IReadOnlyList<IndexedPhraseToken> tokens,
+        int startIndex,
+        int n)
+    {
+        for (int index = startIndex; index < startIndex + n - 1; index++)
+        {
+            int separatorStart = tokens[index].EndOffset;
+            int separatorEnd = tokens[index + 1].StartOffset;
+            if (separatorStart < 0 || separatorEnd < separatorStart || separatorEnd > text.Length)
+            {
+                return false;
+            }
+
+            string separator = text[separatorStart..separatorEnd];
             if (!separator.All(char.IsWhiteSpace))
             {
                 return false;
@@ -2428,6 +2603,11 @@ public sealed class SqliteCorpusStore
         int StartOffset,
         int EndOffset,
         string Text,
+        string NormalizedText);
+
+    private sealed record IndexedPhraseToken(
+        int StartOffset,
+        int EndOffset,
         string NormalizedText);
 
     private sealed record TokenContextTarget(

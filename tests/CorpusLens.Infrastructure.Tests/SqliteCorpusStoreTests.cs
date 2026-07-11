@@ -993,6 +993,102 @@ public sealed class SqliteCorpusStoreTests
         Assert.Equal(2, piazzaDel.Count);
     }
 
+    [Fact]
+    public async Task ListPhrasesAsync_ShouldUseTokenIndexWhenAvailable()
+    {
+        using TestDatabase database = new();
+        string sourceFile = database.CreateSourceFile("italian-token-index.epub", "fake epub content");
+        SqliteCorpusStore store = new(database.Path);
+        StoredCorpus corpus = await store.CreateCorpusAsync("Italian Literature", "it");
+
+        ImportedBook book = new(
+            "italian-token-index",
+            "Italian Token Index Book",
+            "Test Author",
+            "it",
+            sourceFile,
+            new[]
+            {
+                new ImportedChapter(1, "Chapter I", "chapter1.xhtml", string.Empty,
+                    "Piazza del Duomo. Piazza del Duomo.")
+            });
+
+        StoredBookImport storedImport = await store.SaveImportedBookAsync(corpus.Id, book);
+        CorpusAnalysisResult analysis = new(
+            new CorpusSummary(1, 2, 6, 6, 3, 3.0, 5.0),
+            Array.Empty<WordFrequency>(),
+            Array.Empty<NGramFrequency>(),
+            Array.Empty<NextWordFrequency>(),
+            Array.Empty<AnalyzedSentence>());
+
+        StoredAnalysisRun run = await store.SaveAnalysisRunAsync(
+            corpus.Id,
+            storedImport.Book.Id,
+            new AnalysisSettings(),
+            analysis,
+            "report.md",
+            "words.csv",
+            "ngrams.csv",
+            "next_words.csv",
+            "extracted_text.txt");
+
+        await UpdateChapterCleanTextAsync(database.Path, storedImport.Chapters[0].Id, "Xxxxxx xxx Yyyyy. Xxxxxx xxx Yyyyy.");
+
+        IReadOnlyList<StoredPhraseStatistic> phrases = await store.ListPhrasesAsync(run.Id, minN: 3, maxN: 3, minCount: 2, limit: 10);
+
+        StoredPhraseStatistic phrase = Assert.Single(phrases, item => item.Phrase == "piazza del duomo");
+        Assert.Equal(2, phrase.Count);
+        Assert.Equal(1, phrase.ChapterCount);
+    }
+
+    [Fact]
+    public async Task ListPhrasesAsync_ShouldFallbackToCleanTextWhenTokenIndexIsMissing()
+    {
+        using TestDatabase database = new();
+        string sourceFile = database.CreateSourceFile("italian-legacy.epub", "fake epub content");
+        SqliteCorpusStore store = new(database.Path);
+        StoredCorpus corpus = await store.CreateCorpusAsync("Italian Literature", "it");
+
+        ImportedBook book = new(
+            "italian-legacy",
+            "Italian Legacy Book",
+            "Test Author",
+            "it",
+            sourceFile,
+            new[]
+            {
+                new ImportedChapter(1, "Chapter I", "chapter1.xhtml", string.Empty,
+                    "Piazza del Duomo. Piazza del Duomo.")
+            });
+
+        StoredBookImport storedImport = await store.SaveImportedBookAsync(corpus.Id, book);
+        CorpusAnalysisResult analysis = new(
+            new CorpusSummary(1, 2, 6, 6, 3, 3.0, 5.0),
+            Array.Empty<WordFrequency>(),
+            Array.Empty<NGramFrequency>(),
+            Array.Empty<NextWordFrequency>(),
+            Array.Empty<AnalyzedSentence>());
+
+        StoredAnalysisRun run = await store.SaveAnalysisRunAsync(
+            corpus.Id,
+            storedImport.Book.Id,
+            new AnalysisSettings(),
+            analysis,
+            "report.md",
+            "words.csv",
+            "ngrams.csv",
+            "next_words.csv",
+            "extracted_text.txt");
+
+        await DeleteAllTokenOccurrencesAsync(database.Path);
+
+        IReadOnlyList<StoredPhraseStatistic> phrases = await store.ListPhrasesAsync(run.Id, minN: 3, maxN: 3, minCount: 2, limit: 10);
+
+        StoredPhraseStatistic phrase = Assert.Single(phrases, item => item.Phrase == "piazza del duomo");
+        Assert.Equal(2, phrase.Count);
+        Assert.Equal(1, phrase.ChapterCount);
+    }
+
 
     [Fact]
     public async Task GetDifficultyProfileAsync_ShouldComputeRelativeDifficultyMetrics()
