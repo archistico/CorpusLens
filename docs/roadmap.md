@@ -1293,3 +1293,11 @@ Added persistent `TokenOccurrence` storage and `stats token-index <runId>` for v
 ## Milestone 17.4 — Phrase mining da token index
 
 `stats phrases` now uses `TokenOccurrence` when available, with fallback to the previous `CleanText` implementation for legacy runs. The command keeps the same output and filters, while phrase candidates are derived from persisted token positions and still checked against chapter text so phrases do not cross punctuation.
+
+## Milestone 17.5 — Word-books da token index
+
+`stats word-books` now uses `TokenOccurrence` when source-book token rows are available. Folder runs replace the initial aggregate token index with source-book token rows after `AnalysisRunBook` is saved. Legacy runs automatically fall back to the previous `CleanText` implementation.
+
+## Milestone 17.6 — Token index diagnostics and performance
+
+Added token-index diagnostics to `stats token-index` and SQLite indexes for token-index backed KWIC, collocations, phrase mining, and word-book distribution.

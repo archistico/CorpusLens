@@ -493,7 +493,8 @@ public static class Program
         }
 
         CommandLineOptions options = CommandLineOptions.Parse(args.Skip(1).ToArray());
-        SqliteCorpusStore store = new(options.Get("db", DefaultDatabasePath()));
+        string databasePath = options.Get("db", DefaultDatabasePath());
+        SqliteCorpusStore store = new(databasePath);
         StoredAnalysisRunSummary? run = await store
             .GetAnalysisRunSummaryAsync(analysisRunId)
             .ConfigureAwait(false);
@@ -503,25 +504,42 @@ public static class Program
             return 1;
         }
 
-        StoredTokenIndexSummary? summary = await store
-            .GetTokenIndexSummaryAsync(analysisRunId)
+        StoredTokenIndexDiagnostics? diagnostics = await store
+            .GetTokenIndexDiagnosticsAsync(analysisRunId)
             .ConfigureAwait(false);
 
         Console.WriteLine($"Token index for run {analysisRunId}");
         Console.WriteLine($"Run:          {run.CorpusName} / {run.BookTitle}");
-        if (summary is null)
+        Console.WriteLine($"Database:     {databasePath}");
+        Console.WriteLine($"DB size:      {FormatFileSize(databasePath)}");
+
+        if (diagnostics is null || !diagnostics.IsIndexed)
         {
             Console.WriteLine("Status:       not indexed");
+            Console.WriteLine($"Expected word tokens: {run.WordTokenCount}");
+            Console.WriteLine("Query path:   fallback to stored chapter text");
             return 0;
         }
 
         Console.WriteLine("Status:       indexed");
-        Console.WriteLine($"Tokens:       {summary.TokenCount}");
-        Console.WriteLine($"Word tokens:  {summary.WordTokenCount}");
-        Console.WriteLine($"Distinct:     {summary.DistinctTokenCount}");
-        Console.WriteLine($"Content:      {summary.ContentTokenCount}");
-        Console.WriteLine($"Function:     {summary.StopWordTokenCount}");
-        Console.WriteLine($"Chapters:     {summary.ChapterCount}");
+        Console.WriteLine($"Tokens:       {diagnostics.IndexedTokenCount}");
+        Console.WriteLine($"Word tokens:  {diagnostics.IndexedWordTokenCount}");
+        Console.WriteLine($"Expected:     {diagnostics.ExpectedWordTokenCount}");
+        Console.WriteLine($"Coverage:     {FormatProbability(diagnostics.WordTokenCoveragePercentage / 100.0)}");
+        Console.WriteLine($"Delta:        {FormatSignedInteger(diagnostics.WordTokenDelta)}");
+        Console.WriteLine($"Distinct:     {diagnostics.DistinctTokenCount}");
+        Console.WriteLine($"Content:      {diagnostics.ContentTokenCount}");
+        Console.WriteLine($"Function:     {diagnostics.StopWordTokenCount}");
+        Console.WriteLine($"Chapters:     {diagnostics.IndexedChapterCount} of {diagnostics.ExpectedChapterCount}");
+        Console.WriteLine($"Books:        {diagnostics.IndexedBookCount} indexed; {diagnostics.IndexedSourceBookCount} of {diagnostics.SourceBookCount} source books covered");
+        Console.WriteLine($"Run positions:{FormatRunPositionRange(diagnostics)}");
+        Console.WriteLine($"Position gaps:{diagnostics.RunPositionGapCount}");
+        Console.WriteLine();
+        Console.WriteLine("Query path");
+        Console.WriteLine($"KWIC:         {(diagnostics.CanUseTokenIndexForContextQueries ? "token index" : "fallback")}");
+        Console.WriteLine($"Collocations: {(diagnostics.CanUseTokenIndexForContextQueries ? "token index" : "fallback")}");
+        Console.WriteLine($"Phrases:      {(diagnostics.CanUseTokenIndexForContextQueries ? "token index" : "fallback")}");
+        Console.WriteLine($"Word-books:   {(diagnostics.CanUseTokenIndexForWordBookDistribution ? "token index" : "fallback")}");
         return 0;
     }
 
@@ -2025,6 +2043,50 @@ public static class Program
         }
 
         return scoreDifference > 0 ? "left" : "right";
+    }
+
+    private static string FormatFileSize(string path)
+    {
+        if (!File.Exists(path))
+        {
+            return "n/a";
+        }
+
+        long bytes = new FileInfo(path).Length;
+        if (bytes < 1024)
+        {
+            return $"{bytes} B";
+        }
+
+        double kib = bytes / 1024.0;
+        if (kib < 1024)
+        {
+            return $"{kib.ToString("0.##", CultureInfo.InvariantCulture)} KiB";
+        }
+
+        double mib = kib / 1024.0;
+        if (mib < 1024)
+        {
+            return $"{mib.ToString("0.##", CultureInfo.InvariantCulture)} MiB";
+        }
+
+        double gib = mib / 1024.0;
+        return $"{gib.ToString("0.##", CultureInfo.InvariantCulture)} GiB";
+    }
+
+    private static string FormatSignedInteger(int value)
+    {
+        return value.ToString("+0;-0;0", CultureInfo.InvariantCulture);
+    }
+
+    private static string FormatRunPositionRange(StoredTokenIndexDiagnostics diagnostics)
+    {
+        if (diagnostics.FirstRunPosition is null || diagnostics.LastRunPosition is null)
+        {
+            return " n/a";
+        }
+
+        return $" {diagnostics.FirstRunPosition.Value}..{diagnostics.LastRunPosition.Value}";
     }
 
     private static string FormatDouble(double value)

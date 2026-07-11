@@ -77,6 +77,15 @@ public sealed class AnalyzeEpubFolderAndSaveUseCase
             .SaveAnalysisRunBooksAsync(analysisRun.Id, sourceBookImports, cancellationToken)
             .ConfigureAwait(false);
 
+        await store
+            .ReplaceTokenOccurrencesForBooksAsync(
+                analysisRun.Id,
+                corpus.Id,
+                sourceBookImports,
+                analysisResult.Analysis.Words,
+                cancellationToken)
+            .ConfigureAwait(false);
+
         return new AnalyzeEpubFolderAndSaveResult(
             analysisResult,
             corpus,

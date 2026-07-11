@@ -239,6 +239,7 @@ public sealed class SqliteCorpusStoreTests
             "extracted_text.txt");
 
         StoredTokenIndexSummary? summary = await store.GetTokenIndexSummaryAsync(run.Id);
+        StoredTokenIndexDiagnostics? diagnostics = await store.GetTokenIndexDiagnosticsAsync(run.Id);
         IReadOnlyList<StoredTokenOccurrence> aliceOccurrences = await store.ListTokenOccurrencesAsync(run.Id, "ALICE", limit: 10);
 
         Assert.NotNull(summary);
@@ -248,6 +249,15 @@ public sealed class SqliteCorpusStoreTests
         Assert.Equal(1, summary.StopWordTokenCount);
         Assert.Equal(5, summary.ContentTokenCount);
         Assert.Equal(1, summary.ChapterCount);
+        Assert.NotNull(diagnostics);
+        Assert.True(diagnostics!.IsIndexed);
+        Assert.Equal(6, diagnostics.ExpectedWordTokenCount);
+        Assert.Equal(6, diagnostics.IndexedWordTokenCount);
+        Assert.Equal(100.0, diagnostics.WordTokenCoveragePercentage, precision: 2);
+        Assert.Equal(0, diagnostics.WordTokenDelta);
+        Assert.Equal(1, diagnostics.SourceBookCount);
+        Assert.Equal(1, diagnostics.IndexedSourceBookCount);
+        Assert.Equal(0, diagnostics.RunPositionGapCount);
         Assert.Equal(2, aliceOccurrences.Count);
         Assert.All(aliceOccurrences, occurrence =>
         {
@@ -781,6 +791,92 @@ public sealed class SqliteCorpusStoreTests
         Assert.Equal("The Pirate", distribution[1].Title);
         Assert.Equal(1, distribution[1].Count);
     }
+
+    [Fact]
+    public async Task ListWordBookDistributionAsync_ShouldUseTokenIndexWhenSourceBookRowsExist()
+    {
+        using TestDatabase database = new();
+        string firstFile = database.CreateSourceFile("moby.epub", "first fake epub content");
+        string secondFile = database.CreateSourceFile("pirate.epub", "second fake epub content");
+        string folderPath = database.CreateSourceFolder("books");
+
+        SqliteCorpusStore store = new(database.Path);
+        StoredCorpus corpus = await store.CreateCorpusAsync("English Literature", "en");
+
+        ImportedBook aggregateBook = new(
+            "folder-books",
+            "EPUB folder: books",
+            string.Empty,
+            "en",
+            folderPath,
+            new[]
+            {
+                new ImportedChapter(1, "Moby — Chapter I", "moby.epub::chapter1.xhtml", string.Empty, "whale whale sea"),
+                new ImportedChapter(2, "Pirate — Chapter I", "pirate.epub::chapter1.xhtml", string.Empty, "sea whale")
+            });
+        ImportedBook firstBook = new(
+            "moby",
+            "Moby Dick",
+            "Herman Melville",
+            "en",
+            firstFile,
+            new[] { new ImportedChapter(1, "Chapter I", "chapter1.xhtml", string.Empty, "whale whale sea") });
+        ImportedBook secondBook = new(
+            "pirate",
+            "The Pirate",
+            "Walter Scott",
+            "en",
+            secondFile,
+            new[] { new ImportedChapter(1, "Chapter I", "chapter1.xhtml", string.Empty, "sea whale") });
+
+        StoredBookImport aggregateImport = await store.SaveImportedBookAsync(corpus.Id, aggregateBook);
+        StoredBookImport firstImport = await store.SaveImportedBookAsync(corpus.Id, firstBook);
+        StoredBookImport secondImport = await store.SaveImportedBookAsync(corpus.Id, secondBook);
+        CorpusAnalysisResult analysis = new(
+            new CorpusSummary(2, 2, 5, 5, 2, 2.5, 4.0),
+            new[]
+            {
+                new WordFrequency("whale", 3, 2, 600000, false),
+                new WordFrequency("sea", 2, 2, 400000, false)
+            },
+            Array.Empty<NGramFrequency>(),
+            Array.Empty<NextWordFrequency>(),
+            Array.Empty<AnalyzedSentence>());
+
+        StoredAnalysisRun run = await store.SaveAnalysisRunAsync(
+            corpus.Id,
+            aggregateImport.Book.Id,
+            new AnalysisSettings(),
+            analysis,
+            "report.md",
+            "words.csv",
+            "ngrams.csv",
+            "next_words.csv",
+            "extracted_text.txt");
+        await store.SaveAnalysisRunBooksAsync(run.Id, new[] { firstImport, secondImport });
+        await store.ReplaceTokenOccurrencesForBooksAsync(run.Id, corpus.Id, new[] { firstImport, secondImport }, analysis.Words);
+
+        await using (SqliteConnection connection = new($"Data Source={database.Path};Pooling=False"))
+        {
+            await connection.OpenAsync();
+            await using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = "UPDATE Chapter SET CleanText = 'no match here' WHERE BookId IN ($firstBookId, $secondBookId);";
+            command.Parameters.AddWithValue("$firstBookId", firstImport.Book.Id);
+            command.Parameters.AddWithValue("$secondBookId", secondImport.Book.Id);
+            await command.ExecuteNonQueryAsync();
+        }
+
+        IReadOnlyList<StoredWordBookStatistic> distribution = await store.ListWordBookDistributionAsync(run.Id, "WHALE", limit: 10);
+
+        Assert.Equal(2, distribution.Count);
+        Assert.Equal("Moby Dick", distribution[0].Title);
+        Assert.Equal(2, distribution[0].Count);
+        Assert.Equal(3, distribution[0].WordTokenCount);
+        Assert.Equal("The Pirate", distribution[1].Title);
+        Assert.Equal(1, distribution[1].Count);
+        Assert.Equal(2, distribution[1].WordTokenCount);
+    }
+
 
     [Fact]
     public async Task ListCollocationsAsync_ShouldCountWindowCollocatesAroundTargetWord()
