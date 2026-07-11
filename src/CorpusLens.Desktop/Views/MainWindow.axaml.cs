@@ -13,10 +13,10 @@ public sealed partial class MainWindow : Window
     {
         DataContext = viewModel;
         Title = "CorpusLens";
-        Width = 1180;
-        Height = 760;
-        MinWidth = 900;
-        MinHeight = 600;
+        Width = 1280;
+        Height = 820;
+        MinWidth = 980;
+        MinHeight = 640;
         Content = BuildContent(viewModel, this);
     }
 
@@ -37,6 +37,11 @@ public sealed partial class MainWindow : Window
         runSubtitleText.TextWrapping = TextWrapping.Wrap;
 
         TextBlock coreMetricsText = CreateBoundText(viewModel, nameof(MainWindowViewModel.CoreMetrics), () => viewModel.CoreMetrics);
+        TextBlock profileSummaryText = CreateBoundText(viewModel, nameof(MainWindowViewModel.ProfileSummary), () => viewModel.ProfileSummary);
+        TextBlock difficultyText = CreateBoundText(viewModel, nameof(MainWindowViewModel.DifficultySummary), () => viewModel.DifficultySummary);
+        TextBlock contentWordsText = CreateBoundText(viewModel, nameof(MainWindowViewModel.TopContentWords), () => viewModel.TopContentWords);
+        TextBlock functionWordsText = CreateBoundText(viewModel, nameof(MainWindowViewModel.TopFunctionWords), () => viewModel.TopFunctionWords);
+        TextBlock phrasesText = CreateBoundText(viewModel, nameof(MainWindowViewModel.RecurringPhrases), () => viewModel.RecurringPhrases);
         TextBlock tokenIndexText = CreateBoundText(viewModel, nameof(MainWindowViewModel.TokenIndexSummary), () => viewModel.TokenIndexSummary);
         TextBlock queryPathText = CreateBoundText(viewModel, nameof(MainWindowViewModel.QueryPathSummary), () => viewModel.QueryPathSummary);
         TextBlock reportPathText = CreateBoundText(viewModel, nameof(MainWindowViewModel.ReportPath), () => viewModel.ReportPath);
@@ -76,17 +81,38 @@ public sealed partial class MainWindow : Window
 
         ScrollViewer mainArea = new()
         {
-            Content = BuildMainArea(runTitleText, runSubtitleText, coreMetricsText, tokenIndexText, queryPathText, reportPathText),
+            Content = BuildMainArea(
+                runTitleText,
+                runSubtitleText,
+                coreMetricsText,
+                profileSummaryText,
+                difficultyText,
+                contentWordsText,
+                functionWordsText,
+                phrasesText,
+                tokenIndexText,
+                queryPathText,
+                reportPathText),
         };
         Grid.SetColumn(mainArea, 1);
         body.Children.Add(mainArea);
+
+        ProgressBar progressBar = CreateBusyProgress(viewModel);
+        Grid statusGrid = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,220"),
+        };
+        Grid.SetColumn(statusText, 0);
+        statusGrid.Children.Add(statusText);
+        Grid.SetColumn(progressBar, 1);
+        statusGrid.Children.Add(progressBar);
 
         Border statusBar = new()
         {
             Padding = new Thickness(12, 8),
             BorderBrush = Brushes.LightGray,
             BorderThickness = new Thickness(0, 1, 0, 0),
-            Child = statusText,
+            Child = statusGrid,
         };
         Grid.SetRow(statusBar, 2);
         root.Children.Add(statusBar);
@@ -112,6 +138,40 @@ public sealed partial class MainWindow : Window
         return textBlock;
     }
 
+    private static ProgressBar CreateBusyProgress(MainWindowViewModel viewModel)
+    {
+        ProgressBar progressBar = new()
+        {
+            IsIndeterminate = true,
+            IsVisible = viewModel.IsBusy,
+            MinWidth = 180,
+            Height = 8,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+
+        viewModel.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(MainWindowViewModel.IsBusy))
+            {
+                progressBar.IsVisible = viewModel.IsBusy;
+            }
+        };
+
+        return progressBar;
+    }
+
+    private static void DisableWhileBusy(Button button, MainWindowViewModel viewModel)
+    {
+        button.IsEnabled = !viewModel.IsBusy;
+        viewModel.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(MainWindowViewModel.IsBusy))
+            {
+                button.IsEnabled = !viewModel.IsBusy;
+            }
+        };
+    }
+
     private static Control BuildTopBar(MainWindowViewModel viewModel, Window window, TextBlock databasePathText)
     {
         Grid topGrid = new()
@@ -135,6 +195,7 @@ public sealed partial class MainWindow : Window
             Margin = new Thickness(12, 0, 0, 0),
         };
         openButton.Click += async (_, _) => await OpenDatabaseAsync(viewModel, window).ConfigureAwait(true);
+        DisableWhileBusy(openButton, viewModel);
         Grid.SetColumn(openButton, 1);
         topGrid.Children.Add(openButton);
 
@@ -147,6 +208,7 @@ public sealed partial class MainWindow : Window
             Margin = new Thickness(12, 0, 0, 0),
         };
         refreshButton.Click += async (_, _) => await viewModel.RefreshRunsAsync().ConfigureAwait(true);
+        DisableWhileBusy(refreshButton, viewModel);
         Grid.SetColumn(refreshButton, 3);
         topGrid.Children.Add(refreshButton);
 
@@ -201,6 +263,7 @@ public sealed partial class MainWindow : Window
         ListBox runs = new()
         {
             ItemsSource = viewModel.Runs,
+            IsEnabled = !viewModel.IsBusy,
         };
         runs.SelectionChanged += async (_, _) =>
         {
@@ -217,6 +280,11 @@ public sealed partial class MainWindow : Window
             {
                 runs.SelectedItem = viewModel.SelectedRun;
             }
+
+            if (args.PropertyName == nameof(MainWindowViewModel.IsBusy))
+            {
+                runs.IsEnabled = !viewModel.IsBusy;
+            }
         };
         Grid.SetRow(runs, 1);
         panel.Children.Add(runs);
@@ -228,6 +296,11 @@ public sealed partial class MainWindow : Window
         TextBlock runTitleText,
         TextBlock runSubtitleText,
         TextBlock coreMetricsText,
+        TextBlock profileSummaryText,
+        TextBlock difficultyText,
+        TextBlock contentWordsText,
+        TextBlock functionWordsText,
+        TextBlock phrasesText,
         TextBlock tokenIndexText,
         TextBlock queryPathText,
         TextBlock reportPathText)
@@ -241,14 +314,31 @@ public sealed partial class MainWindow : Window
         stack.Children.Add(runTitleText);
         stack.Children.Add(runSubtitleText);
 
-        Grid cards = new()
+        Grid topCards = new()
         {
             ColumnDefinitions = new ColumnDefinitions("*,*,*"),
         };
-        cards.Children.Add(BuildCard("Core metrics", coreMetricsText, 0));
-        cards.Children.Add(BuildCard("Token index", tokenIndexText, 1));
-        cards.Children.Add(BuildCard("Query path", queryPathText, 2));
-        stack.Children.Add(cards);
+        topCards.Children.Add(BuildCard("Core metrics", coreMetricsText, 0));
+        topCards.Children.Add(BuildCard("Corpus profile", profileSummaryText, 1));
+        topCards.Children.Add(BuildCard("Difficulty", difficultyText, 2));
+        stack.Children.Add(topCards);
+
+        Grid wordCards = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,*"),
+        };
+        wordCards.Children.Add(BuildCard("Top content words", contentWordsText, 0, monospace: true));
+        wordCards.Children.Add(BuildCard("Top function words", functionWordsText, 1, monospace: true));
+        stack.Children.Add(wordCards);
+
+        Grid lowerCards = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("2*,*,*"),
+        };
+        lowerCards.Children.Add(BuildCard("Recurring phrases", phrasesText, 0, monospace: true));
+        lowerCards.Children.Add(BuildCard("Token index", tokenIndexText, 1));
+        lowerCards.Children.Add(BuildCard("Query path", queryPathText, 2));
+        stack.Children.Add(lowerCards);
 
         Border reportCard = new()
         {
@@ -271,9 +361,14 @@ public sealed partial class MainWindow : Window
         return stack;
     }
 
-    private static Control BuildCard(string title, TextBlock body, int column)
+    private static Control BuildCard(string title, TextBlock body, int column, bool monospace = false)
     {
         body.TextWrapping = TextWrapping.Wrap;
+        if (monospace)
+        {
+            body.FontFamily = new FontFamily("Consolas, Cascadia Mono, Menlo, monospace");
+            body.FontSize = 12;
+        }
 
         Border card = new()
         {

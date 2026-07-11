@@ -1317,3 +1317,16 @@ Added the first Avalonia desktop shell in `src/CorpusLens.Desktop`, with a minim
 ## Milestone 18.2 — Open database + run list
 
 Connected the Avalonia desktop shell to existing CorpusLens SQLite databases. The UI can open `corpuslens.db`, list analysis runs, select a run, show core summary metrics, token-index health and query path status. Import and analysis tools remain CLI-only for now.
+
+
+## Milestone 18.3 — Run dashboard / corpus profile
+
+Extended the Avalonia desktop app with a compact run dashboard. Selecting a run now shows corpus profile information, difficulty summary, top content/function words, recurring phrases, token-index health and query path status. The UI continues to use `CorpusLens.Application/Queries`; no SQLite access is duplicated in the desktop layer.
+
+
+## Milestone 18.3.1 — Async UI loading and progress
+
+- Desktop database loading runs off the UI thread.
+- Run dashboard health/profile loading runs off the UI thread.
+- Status bar progress indicator added.
+- Open/Refresh/run selection are disabled while loading.
