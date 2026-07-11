@@ -201,7 +201,7 @@ The Avalonia desktop project is available as an early shell:
 make desktop
 ```
 
-Milestone 18.1 only opens the UI layout. Database opening and run navigation start in Milestone 18.2.
+The desktop app can open an existing `corpuslens.db`, list runs, select a run, and show core metrics plus token-index health. Import and advanced explorers remain CLI-first for now.
 
 ## Development
 

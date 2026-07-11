@@ -1313,3 +1313,7 @@ Prepared the UI layer by adding reusable read-only query services in `CorpusLens
 ## Milestone 18.1 — Avalonia skeleton
 
 Added the first Avalonia desktop shell in `src/CorpusLens.Desktop`, with a minimal MVVM structure, main window layout, placeholder run list, status bar and `make desktop`. No database loading or query UI is implemented yet; those start in Milestone 18.2.
+
+## Milestone 18.2 — Open database + run list
+
+Connected the Avalonia desktop shell to existing CorpusLens SQLite databases. The UI can open `corpuslens.db`, list analysis runs, select a run, show core summary metrics, token-index health and query path status. Import and analysis tools remain CLI-only for now.
