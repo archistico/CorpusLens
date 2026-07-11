@@ -1246,3 +1246,25 @@ Phrase mining command added with n-range, min-count and optional content-word bo
 - Added `--min-chapters` for `stats phrases`.
 - Added `--longest-only` to suppress conservative nested phrase duplicates.
 - Added Makefile support for `MIN_CHAPTERS` and `LONGEST_ONLY`.
+
+## Milestone 13 — Corpus comparison
+
+- Added `stats compare-word <leftRunId> <rightRunId> <word>`.
+- Added `stats compare-words <leftRunId> <rightRunId>` with `--min-count`, `--content-only` and `--function-only`.
+- Added Makefile targets for run comparison.
+- Ranking is currently based on absolute per-million frequency difference; stronger keyness metrics remain future work.
+
+## Milestone 13.1 — Corpus comparison polish
+
+- Added `--shared-only` and `--exclusive-only` to `stats compare-words`.
+- Added language mismatch note for lexical cross-language comparisons.
+- Improved formatting for very small non-zero ratios.
+- Added Makefile support for `SHARED_ONLY` and `EXCLUSIVE_ONLY`.
+
+## Milestone 14 — Relative difficulty
+
+Added `stats difficulty` and `stats compare-difficulty` with a transparent heuristic based on sentence length, word length, long-word share, content-word share and lexical diversity.
+
+## Milestone 14.1 — Difficulty output polish
+
+Polished `stats difficulty` output with language, thresholds and clearer comparison notes. No scoring formula changes.

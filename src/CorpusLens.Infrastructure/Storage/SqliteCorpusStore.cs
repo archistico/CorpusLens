@@ -928,6 +928,94 @@ public sealed class SqliteCorpusStore
         return ReadWordStatistic(reader);
     }
 
+    public async Task<StoredDifficultyProfile?> GetDifficultyProfileAsync(
+        long analysisRunId,
+        int longWordLength = 7,
+        int veryLongWordLength = 10,
+        CancellationToken cancellationToken = default)
+    {
+        int safeLongWordLength = Math.Max(2, longWordLength);
+        int safeVeryLongWordLength = Math.Max(safeLongWordLength, veryLongWordLength);
+
+        StoredAnalysisRunSummary? run = await GetAnalysisRunSummaryAsync(analysisRunId, cancellationToken)
+            .ConfigureAwait(false);
+        if (run is null)
+        {
+            return null;
+        }
+
+        await InitializeAsync(cancellationToken).ConfigureAwait(false);
+
+        await using SqliteConnection connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await EnableForeignKeysAsync(connection, cancellationToken).ConfigureAwait(false);
+
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT
+                COALESCE(SUM(CASE WHEN IsStopWord = 0 THEN Count ELSE 0 END), 0) AS ContentWordTokens,
+                COALESCE(SUM(CASE WHEN IsStopWord = 1 THEN Count ELSE 0 END), 0) AS FunctionWordTokens,
+                COALESCE(SUM(CASE WHEN length(Word) >= $longWordLength THEN Count ELSE 0 END), 0) AS LongWordTokens,
+                COALESCE(SUM(CASE WHEN length(Word) >= $veryLongWordLength THEN Count ELSE 0 END), 0) AS VeryLongWordTokens
+            FROM WordStatistic
+            WHERE AnalysisRunId = $analysisRunId;
+            """;
+        AddParameter(command, "$analysisRunId", analysisRunId);
+        AddParameter(command, "$longWordLength", safeLongWordLength);
+        AddParameter(command, "$veryLongWordLength", safeVeryLongWordLength);
+
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        int contentWordTokens = Convert.ToInt32(reader.GetInt64(0), CultureInfo.InvariantCulture);
+        int functionWordTokens = Convert.ToInt32(reader.GetInt64(1), CultureInfo.InvariantCulture);
+        int longWordTokens = Convert.ToInt32(reader.GetInt64(2), CultureInfo.InvariantCulture);
+        int veryLongWordTokens = Convert.ToInt32(reader.GetInt64(3), CultureInfo.InvariantCulture);
+
+        double wordTokenCount = Math.Max(1, run.WordTokenCount);
+        double contentWordShare = contentWordTokens / wordTokenCount;
+        double functionWordShare = functionWordTokens / wordTokenCount;
+        double longWordShare = longWordTokens / wordTokenCount;
+        double veryLongWordShare = veryLongWordTokens / wordTokenCount;
+        double lexicalDiversityPerThousand = run.WordTokenCount == 0
+            ? 0
+            : run.DistinctWordCount * 1_000.0 / run.WordTokenCount;
+        double heuristicScore = CalculateDifficultyHeuristicScore(
+            run.AverageWordsPerSentence,
+            run.AverageCharactersPerWord,
+            longWordShare,
+            veryLongWordShare,
+            contentWordShare,
+            lexicalDiversityPerThousand);
+
+        return new StoredDifficultyProfile(
+            run.Id,
+            run.CorpusId,
+            run.CorpusName,
+            run.BookId,
+            run.BookTitle,
+            run.SentenceCount,
+            run.WordTokenCount,
+            run.DistinctWordCount,
+            run.AverageWordsPerSentence,
+            run.AverageCharactersPerWord,
+            contentWordTokens,
+            functionWordTokens,
+            longWordTokens,
+            veryLongWordTokens,
+            safeLongWordLength,
+            safeVeryLongWordLength,
+            contentWordShare,
+            functionWordShare,
+            longWordShare,
+            veryLongWordShare,
+            lexicalDiversityPerThousand,
+            heuristicScore);
+    }
+
     public async Task<IReadOnlyList<StoredNGramStatistic>> ListTopNGramsAsync(
         long analysisRunId,
         int? n = null,
@@ -1651,6 +1739,22 @@ public sealed class SqliteCorpusStore
     }
 
 
+
+    private static double CalculateDifficultyHeuristicScore(
+        double averageWordsPerSentence,
+        double averageCharactersPerWord,
+        double longWordShare,
+        double veryLongWordShare,
+        double contentWordShare,
+        double lexicalDiversityPerThousand)
+    {
+        return (averageWordsPerSentence * 2.0)
+            + (averageCharactersPerWord * 8.0)
+            + (longWordShare * 100.0 * 0.6)
+            + (veryLongWordShare * 100.0 * 0.8)
+            + (contentWordShare * 100.0 * 0.2)
+            + (lexicalDiversityPerThousand * 0.08);
+    }
 
     private static StoredAnalysisRunSummary ReadAnalysisRunSummary(SqliteDataReader reader)
     {

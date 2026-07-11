@@ -11,6 +11,10 @@
 #   make stats-function RUN=1 LIMIT=25
 #   make stats-word RUN=1 WORD=alice LIMIT=25
 #   make stats-word-books RUN=1 WORD=alice LIMIT=25
+#   make stats-compare-word RUN_A=1 RUN_B=2 WORD=love
+#   make stats-compare-words RUN_A=1 RUN_B=2 LIMIT=25 MIN_COUNT=5 SHARED_ONLY=--shared-only
+#   make stats-difficulty RUN=1
+#   make stats-compare-difficulty RUN_A=1 RUN_B=2
 #   make stats-collocations RUN=1 WORD=alice WINDOW=4 LIMIT=25 MIN_COUNT=1 MIN_DICE=0.0
 #   make stats-collocations-content RUN=1 WORD=whale WINDOW=4 LIMIT=25 MIN_COUNT=3
 #   make stats-collocations-function RUN=1 WORD=love WINDOW=4 LIMIT=25 MIN_COUNT=3
@@ -35,6 +39,8 @@ BOOK ?= $(BOOKS_EN)/alice.epub
 BOOKS ?= $(BOOKS_EN)
 OUT ?= ./artifacts/analysis
 RUN ?= 1
+RUN_A ?= 1
+RUN_B ?= 2
 LIMIT ?= 25
 WORD ?= alice
 N ?= 3
@@ -42,13 +48,17 @@ CONTEXT ?= 8
 WINDOW ?= 4
 MIN_COUNT ?= 1
 MIN_DICE ?= 0.0
+LONG_WORD_LENGTH ?= 7
+VERY_LONG_WORD_LENGTH ?= 10
+SHARED_ONLY ?=
+EXCLUSIVE_ONLY ?=
 MIN_CHAPTERS ?= 1
 LONGEST_ONLY ?=
 MIN_N ?= 2
 MAX_N ?= 5
 DIAGNOSTICS_OUT ?= ./artifacts/diagnostics/import_diagnostics.md
 
-.PHONY: restore build test check demo clean clean-data clean-artifacts setup-books corpus-create corpus-create-en corpus-create-it corpus-list analyze-text analyze-book analyze-books analyze-books-recursive analyze-en analyze-it analyze-en-recursive analyze-it-recursive stats-runs stats-summary stats-books stats-words stats-content stats-function stats-word stats-word-books stats-collocations stats-collocations-content stats-collocations-function stats-phrases stats-phrases-content-boundary stats-kwic stats-ngrams stats-trigrams stats-next stats-categories inspect-run
+.PHONY: restore build test check demo clean clean-data clean-artifacts setup-books corpus-create corpus-create-en corpus-create-it corpus-list analyze-text analyze-book analyze-books analyze-books-recursive analyze-en analyze-it analyze-en-recursive analyze-it-recursive stats-runs stats-summary stats-books stats-words stats-content stats-function stats-word stats-word-books stats-compare-word stats-compare-words stats-compare-words-content stats-compare-words-function stats-compare-words-shared stats-compare-words-exclusive stats-difficulty stats-compare-difficulty stats-collocations stats-collocations-content stats-collocations-function stats-phrases stats-phrases-content-boundary stats-kwic stats-ngrams stats-trigrams stats-next stats-categories inspect-run
 
 restore:
 	$(DOTNET) restore
@@ -135,6 +145,31 @@ stats-word:
 
 stats-word-books:
 	$(DOTNET) run --project $(PROJECT) -- stats word-books $(RUN) "$(WORD)" --limit $(LIMIT) --db $(DB)
+
+stats-compare-word:
+	$(DOTNET) run --project $(PROJECT) -- stats compare-word $(RUN_A) $(RUN_B) "$(WORD)" --db $(DB)
+
+stats-compare-words:
+	$(DOTNET) run --project $(PROJECT) -- stats compare-words $(RUN_A) $(RUN_B) --limit $(LIMIT) --min-count $(MIN_COUNT) $(SHARED_ONLY) $(EXCLUSIVE_ONLY) --db $(DB)
+
+stats-compare-words-content:
+	$(DOTNET) run --project $(PROJECT) -- stats compare-words $(RUN_A) $(RUN_B) --content-only --limit $(LIMIT) --min-count $(MIN_COUNT) $(SHARED_ONLY) $(EXCLUSIVE_ONLY) --db $(DB)
+
+stats-compare-words-function:
+	$(DOTNET) run --project $(PROJECT) -- stats compare-words $(RUN_A) $(RUN_B) --function-only --limit $(LIMIT) --min-count $(MIN_COUNT) $(SHARED_ONLY) $(EXCLUSIVE_ONLY) --db $(DB)
+
+stats-compare-words-shared:
+	$(DOTNET) run --project $(PROJECT) -- stats compare-words $(RUN_A) $(RUN_B) --shared-only --limit $(LIMIT) --min-count $(MIN_COUNT) --db $(DB)
+
+stats-compare-words-exclusive:
+	$(DOTNET) run --project $(PROJECT) -- stats compare-words $(RUN_A) $(RUN_B) --exclusive-only --limit $(LIMIT) --min-count $(MIN_COUNT) --db $(DB)
+
+
+stats-difficulty:
+	$(DOTNET) run --project $(PROJECT) -- stats difficulty $(RUN) --long-word-length $(LONG_WORD_LENGTH) --very-long-word-length $(VERY_LONG_WORD_LENGTH) --db $(DB)
+
+stats-compare-difficulty:
+	$(DOTNET) run --project $(PROJECT) -- stats compare-difficulty $(RUN_A) $(RUN_B) --long-word-length $(LONG_WORD_LENGTH) --very-long-word-length $(VERY_LONG_WORD_LENGTH) --db $(DB)
 
 stats-collocations:
 	$(DOTNET) run --project $(PROJECT) -- stats collocations $(RUN) "$(WORD)" --window $(WINDOW) --limit $(LIMIT) --min-count $(MIN_COUNT) --min-dice $(MIN_DICE) --db $(DB)

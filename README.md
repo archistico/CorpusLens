@@ -13,6 +13,8 @@ It is CLI-first, testable, and stores analysis data in SQLite so that corpora ca
 - KWIC contexts
 - source-book lists for aggregate corpus runs
 - word distribution by book
+- word comparison between analysis runs
+- relative difficulty profiles for analysis runs
 - collocations with content/function filters
 - repeated phrase mining
 - import diagnostics for EPUB folders
@@ -90,6 +92,26 @@ make stats-kwic RUN=1 WORD="alice" LIMIT=10 CONTEXT=8
 make stats-next RUN=1 WORD="don't" LIMIT=25
 ```
 
+Compare runs:
+
+```powershell
+make stats-compare-word RUN_A=1 RUN_B=2 WORD="love"
+make stats-compare-words-content RUN_A=1 RUN_B=2 LIMIT=30 MIN_COUNT=5
+make stats-compare-words-content RUN_A=1 RUN_B=2 LIMIT=30 MIN_COUNT=5 SHARED_ONLY=--shared-only
+make stats-compare-words-content RUN_A=1 RUN_B=2 LIMIT=30 MIN_COUNT=5 EXCLUSIVE_ONLY=--exclusive-only
+```
+
+Comparisons are lexical. If two runs use different languages, CorpusLens prints a note and does not translate equivalent concepts.
+
+Difficulty:
+
+```powershell
+make stats-difficulty RUN=1
+make stats-compare-difficulty RUN_A=1 RUN_B=2
+```
+
+Difficulty is a relative heuristic based on sentence length, word length, long-word share, content-word share and lexical diversity. It is useful for comparing similar corpora, not as an absolute reading-grade formula.
+
 Collocations:
 
 ```powershell
@@ -122,6 +144,10 @@ dotnet run --project src/CorpusLens.Cli -- corpus create "English Literature" --
 dotnet run --project src/CorpusLens.Cli -- analyze-epub-folder ./books/en --language en --corpus "English Literature" --db ./data/corpuslens.db --out ./artifacts/en
 
 dotnet run --project src/CorpusLens.Cli -- stats word-books 1 "whale" --limit 30 --db ./data/corpuslens.db
+
+dotnet run --project src/CorpusLens.Cli -- stats compare-words 1 2 --content-only --min-count 5 --limit 30 --db ./data/corpuslens.db
+
+dotnet run --project src/CorpusLens.Cli -- stats difficulty 1 --db ./data/corpuslens.db
 ```
 
 ## Development

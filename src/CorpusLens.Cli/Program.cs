@@ -250,6 +250,10 @@ public static class Program
             "summary" => await PrintAnalysisRunSummaryAsync(subCommandArgs).ConfigureAwait(false),
             "books" => await PrintAnalysisRunBooksAsync(subCommandArgs).ConfigureAwait(false),
             "word-books" => await PrintWordBookDistributionAsync(subCommandArgs).ConfigureAwait(false),
+            "compare-word" => await PrintCompareWordAsync(subCommandArgs).ConfigureAwait(false),
+            "compare-words" => await PrintCompareWordsAsync(subCommandArgs).ConfigureAwait(false),
+            "difficulty" => await PrintDifficultyAsync(subCommandArgs).ConfigureAwait(false),
+            "compare-difficulty" => await PrintCompareDifficultyAsync(subCommandArgs).ConfigureAwait(false),
             "collocations" => await PrintCollocationsAsync(subCommandArgs).ConfigureAwait(false),
             "phrases" => await PrintPhrasesAsync(subCommandArgs).ConfigureAwait(false),
             "words" => await PrintTopWordsAsync(subCommandArgs).ConfigureAwait(false),
@@ -409,6 +413,230 @@ public static class Program
             StoredWordBookStatistic book = books[index];
             Console.WriteLine($"{index + 1,3}  {TrimForColumn(book.Title, 32),-32}  {TrimForColumn(book.Author, 24),-24}  {book.Count,5}  {FormatDouble(book.FrequencyPerMillion),11}  {book.WordTokenCount,11}");
         }
+
+        return 0;
+    }
+
+    private static async Task<int> PrintCompareWordAsync(string[] args)
+    {
+        if (!TryReadTwoRunIds(args, out long leftRunId, out long rightRunId) || args.Length < 3)
+        {
+            Console.Error.WriteLine("Usage: stats compare-word <leftRunId> <rightRunId> <word> [--db <file>]");
+            return 1;
+        }
+
+        string wordText = args[2];
+        CommandLineOptions options = CommandLineOptions.Parse(args.Skip(3).ToArray());
+        SqliteCorpusStore store = new(options.Get("db", DefaultDatabasePath()));
+
+        StoredAnalysisRunSummary? leftRun = await store.GetAnalysisRunSummaryAsync(leftRunId).ConfigureAwait(false);
+        StoredAnalysisRunSummary? rightRun = await store.GetAnalysisRunSummaryAsync(rightRunId).ConfigureAwait(false);
+        if (!ValidateComparisonRuns(leftRunId, rightRunId, leftRun, rightRun))
+        {
+            return 1;
+        }
+
+        string? leftLanguageCode = await ReadRunLanguageCodeAsync(store, leftRunId).ConfigureAwait(false);
+        string? rightLanguageCode = await ReadRunLanguageCodeAsync(store, rightRunId).ConfigureAwait(false);
+        StoredWordStatistic? leftWord = await store.GetWordStatisticAsync(leftRunId, wordText).ConfigureAwait(false);
+        StoredWordStatistic? rightWord = await store.GetWordStatisticAsync(rightRunId, wordText).ConfigureAwait(false);
+        WordComparison comparison = CreateWordComparison(wordText.Trim(), leftWord, rightWord);
+
+        Console.WriteLine($"Word comparison for '{wordText}'");
+        Console.WriteLine($"Left run:  {RunComparisonLabel(leftRun!)}");
+        Console.WriteLine($"Right run: {RunComparisonLabel(rightRun!)}");
+        WriteLanguageComparisonNote(leftLanguageCode, rightLanguageCode);
+        Console.WriteLine();
+        Console.WriteLine("Side   Count  Documents  Per million  Share of combined");
+        Console.WriteLine("-----  -----  ---------  -----------  -----------------");
+        Console.WriteLine($"Left   {comparison.LeftCount,5}  {comparison.LeftDocumentCount,9}  {FormatDouble(comparison.LeftFrequencyPerMillion),11}  {FormatProbability(comparison.LeftShare),17}");
+        Console.WriteLine($"Right  {comparison.RightCount,5}  {comparison.RightDocumentCount,9}  {FormatDouble(comparison.RightFrequencyPerMillion),11}  {FormatProbability(comparison.RightShare),17}");
+        Console.WriteLine();
+        Console.WriteLine($"Difference per million: {FormatSignedDouble(comparison.DifferencePerMillion)}");
+        Console.WriteLine($"Ratio left/right:       {FormatRatio(comparison.Ratio)}");
+        Console.WriteLine($"Favours:                {comparison.Direction}");
+        Console.WriteLine($"Type:                   {(comparison.IsFunctionWord ? "function" : "content")}");
+
+        return 0;
+    }
+
+    private static async Task<int> PrintCompareWordsAsync(string[] args)
+    {
+        if (!TryReadTwoRunIds(args, out long leftRunId, out long rightRunId))
+        {
+            Console.Error.WriteLine("Usage: stats compare-words <leftRunId> <rightRunId> [--limit <n>] [--min-count <n>] [--shared-only|--exclusive-only] [--content-only|--function-only] [--db <file>]");
+            return 1;
+        }
+
+        CommandLineOptions options = CommandLineOptions.Parse(args.Skip(2).ToArray());
+        SqliteCorpusStore store = new(options.Get("db", DefaultDatabasePath()));
+        int requestedLimit = ReadLimit(options);
+        int minCount = Math.Max(1, TryReadIntOption(options, "min-count") ?? 1);
+        StoredWordFilter filter = ReadWordFilter(options);
+        ComparisonPresenceFilter presenceFilter = ReadComparisonPresenceFilter(options);
+        int fetchLimit = Math.Min(Math.Max(requestedLimit * 100, 2_000), 20_000);
+
+        StoredAnalysisRunSummary? leftRun = await store.GetAnalysisRunSummaryAsync(leftRunId).ConfigureAwait(false);
+        StoredAnalysisRunSummary? rightRun = await store.GetAnalysisRunSummaryAsync(rightRunId).ConfigureAwait(false);
+        if (!ValidateComparisonRuns(leftRunId, rightRunId, leftRun, rightRun))
+        {
+            return 1;
+        }
+
+        string? leftLanguageCode = await ReadRunLanguageCodeAsync(store, leftRunId).ConfigureAwait(false);
+        string? rightLanguageCode = await ReadRunLanguageCodeAsync(store, rightRunId).ConfigureAwait(false);
+        IReadOnlyList<StoredWordStatistic> leftWords = await store
+            .ListTopWordsAsync(leftRunId, fetchLimit, filter)
+            .ConfigureAwait(false);
+        IReadOnlyList<StoredWordStatistic> rightWords = await store
+            .ListTopWordsAsync(rightRunId, fetchLimit, filter)
+            .ConfigureAwait(false);
+
+        IReadOnlyList<WordComparison> matchedComparisons = BuildWordComparisons(leftWords, rightWords)
+            .Where(item => item.LeftCount >= minCount || item.RightCount >= minCount)
+            .Where(item => MatchesPresenceFilter(item, presenceFilter))
+            .OrderByDescending(item => item.AbsoluteDifferencePerMillion)
+            .ThenByDescending(item => item.TotalCount)
+            .ThenBy(item => item.Word, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        IReadOnlyList<WordComparison> comparisons = matchedComparisons
+            .Take(requestedLimit)
+            .ToArray();
+
+        Console.WriteLine($"Word differences between run {leftRunId} and run {rightRunId}");
+        Console.WriteLine($"Left run:  {RunComparisonLabel(leftRun!)}");
+        Console.WriteLine($"Right run: {RunComparisonLabel(rightRun!)}");
+        WriteLanguageComparisonNote(leftLanguageCode, rightLanguageCode);
+        Console.WriteLine($"Filter:    {WordFilterLabel(filter)}");
+        Console.WriteLine($"Presence:  {ComparisonPresenceFilterLabel(presenceFilter)}");
+        Console.WriteLine($"Minimum count in either run: {minCount}");
+        Console.WriteLine($"Fetched words per run: {fetchLimit}");
+        Console.WriteLine($"Matched words: {matchedComparisons.Count}");
+        Console.WriteLine($"Shown words:   {comparisons.Count} of {matchedComparisons.Count}");
+        Console.WriteLine("Ranking: absolute per-million difference");
+        Console.WriteLine();
+        Console.WriteLine("#    Word                 Type      Left cnt  Left pm    Right cnt  Right pm   Diff pm   Ratio    Favours");
+        Console.WriteLine("---  -------------------  --------  --------  ---------  ---------  ---------  --------  -------  -------");
+        for (int index = 0; index < comparisons.Count; index++)
+        {
+            WordComparison comparison = comparisons[index];
+            Console.WriteLine($"{index + 1,3}  {TrimForColumn(comparison.Word, 19),-19}  {(comparison.IsFunctionWord ? "function" : "content"),-8}  {comparison.LeftCount,8}  {FormatDouble(comparison.LeftFrequencyPerMillion),9}  {comparison.RightCount,9}  {FormatDouble(comparison.RightFrequencyPerMillion),9}  {FormatSignedDouble(comparison.DifferencePerMillion),8}  {FormatRatio(comparison.Ratio),7}  {comparison.Direction}");
+        }
+
+        if (comparisons.Count == 0)
+        {
+            Console.WriteLine("No word differences matched the selected filters.");
+        }
+
+        return 0;
+    }
+
+
+    private static async Task<int> PrintDifficultyAsync(string[] args)
+    {
+        if (!TryReadRunId(args, out long analysisRunId))
+        {
+            Console.Error.WriteLine("Usage: stats difficulty <runId> [--long-word-length <n>] [--very-long-word-length <n>] [--db <file>]");
+            return 1;
+        }
+
+        CommandLineOptions options = CommandLineOptions.Parse(args.Skip(1).ToArray());
+        int longWordLength = Math.Max(2, TryReadIntOption(options, "long-word-length") ?? 7);
+        int veryLongWordLength = Math.Max(longWordLength, TryReadIntOption(options, "very-long-word-length") ?? 10);
+        SqliteCorpusStore store = new(options.Get("db", DefaultDatabasePath()));
+
+        StoredDifficultyProfile? profile = await store
+            .GetDifficultyProfileAsync(analysisRunId, longWordLength, veryLongWordLength)
+            .ConfigureAwait(false);
+
+        if (profile is null)
+        {
+            Console.Error.WriteLine($"Analysis run {analysisRunId} was not found.");
+            return 1;
+        }
+
+        IReadOnlyList<string> languageCodes = await ReadRunLanguageCodesAsync(store, analysisRunId)
+            .ConfigureAwait(false);
+
+        Console.WriteLine($"Difficulty profile for run {analysisRunId}");
+        Console.WriteLine($"Run: {profile.CorpusName} / {profile.BookTitle}");
+        Console.WriteLine($"Language: {FormatLanguageCodes(languageCodes)}");
+        Console.WriteLine($"Thresholds: long words >= {longWordLength} chars; very long words >= {veryLongWordLength} chars");
+        Console.WriteLine("Score type: heuristic relative score; higher means more difficult within comparable corpora.");
+        Console.WriteLine("Note: compare mainly runs in the same language or similar corpus type.");
+        Console.WriteLine($"Heuristic score: {FormatDouble(profile.HeuristicScore)}");
+        Console.WriteLine();
+        Console.WriteLine("Metric                         Value       Direction");
+        Console.WriteLine("-----------------------------  ----------  ----------------");
+        Console.WriteLine($"Average words per sentence     {FormatDouble(profile.AverageWordsPerSentence),10}  higher = harder");
+        Console.WriteLine($"Average chars per word         {FormatDouble(profile.AverageCharactersPerWord),10}  higher = harder");
+        Console.WriteLine($"Long word share >={profile.LongWordLength,-2} chars     {FormatProbability(profile.LongWordShare),10}  higher = harder");
+        Console.WriteLine($"Very long share >={profile.VeryLongWordLength,-2} chars     {FormatProbability(profile.VeryLongWordShare),10}  higher = harder");
+        Console.WriteLine($"Content word share             {FormatProbability(profile.ContentWordShare),10}  higher = denser");
+        Console.WriteLine($"Function word share            {FormatProbability(profile.FunctionWordShare),10}  lower = denser");
+        Console.WriteLine($"Lexical diversity / 1k words   {FormatDouble(profile.LexicalDiversityPerThousand),10}  higher = more varied");
+        Console.WriteLine();
+        Console.WriteLine("Counts");
+        Console.WriteLine($"Sentences:       {profile.SentenceCount}");
+        Console.WriteLine($"Word tokens:     {profile.WordTokenCount}");
+        Console.WriteLine($"Distinct words:  {profile.DistinctWordCount}");
+        Console.WriteLine($"Content tokens:  {profile.ContentWordTokens}");
+        Console.WriteLine($"Function tokens: {profile.FunctionWordTokens}");
+
+        return 0;
+    }
+
+    private static async Task<int> PrintCompareDifficultyAsync(string[] args)
+    {
+        if (!TryReadTwoRunIds(args, out long leftRunId, out long rightRunId))
+        {
+            Console.Error.WriteLine("Usage: stats compare-difficulty <leftRunId> <rightRunId> [--long-word-length <n>] [--very-long-word-length <n>] [--db <file>]");
+            return 1;
+        }
+
+        CommandLineOptions options = CommandLineOptions.Parse(args.Skip(2).ToArray());
+        int longWordLength = Math.Max(2, TryReadIntOption(options, "long-word-length") ?? 7);
+        int veryLongWordLength = Math.Max(longWordLength, TryReadIntOption(options, "very-long-word-length") ?? 10);
+        SqliteCorpusStore store = new(options.Get("db", DefaultDatabasePath()));
+
+        StoredAnalysisRunSummary? leftRun = await store.GetAnalysisRunSummaryAsync(leftRunId).ConfigureAwait(false);
+        StoredAnalysisRunSummary? rightRun = await store.GetAnalysisRunSummaryAsync(rightRunId).ConfigureAwait(false);
+        if (!ValidateComparisonRuns(leftRunId, rightRunId, leftRun, rightRun))
+        {
+            return 1;
+        }
+
+        StoredDifficultyProfile? leftProfile = await store
+            .GetDifficultyProfileAsync(leftRunId, longWordLength, veryLongWordLength)
+            .ConfigureAwait(false);
+        StoredDifficultyProfile? rightProfile = await store
+            .GetDifficultyProfileAsync(rightRunId, longWordLength, veryLongWordLength)
+            .ConfigureAwait(false);
+
+        if (leftProfile is null || rightProfile is null)
+        {
+            Console.Error.WriteLine("Unable to build one or both difficulty profiles.");
+            return 1;
+        }
+
+        string? leftLanguageCode = await ReadRunLanguageCodeAsync(store, leftRunId).ConfigureAwait(false);
+        string? rightLanguageCode = await ReadRunLanguageCodeAsync(store, rightRunId).ConfigureAwait(false);
+
+        Console.WriteLine($"Difficulty comparison between run {leftRunId} and run {rightRunId}");
+        Console.WriteLine($"Left run:  {RunComparisonLabel(leftRun!)}");
+        Console.WriteLine($"Right run: {RunComparisonLabel(rightRun!)}");
+        WriteLanguageComparisonNote(leftLanguageCode, rightLanguageCode);
+        Console.WriteLine("Score type: heuristic relative score; compare mainly runs in the same language or similar corpus type.");
+        Console.WriteLine();
+        Console.WriteLine("Side   Score   Avg sent  Avg word  Long %  Very long %  Content %  LexDiv/1k");
+        Console.WriteLine("-----  ------  --------  --------  ------  -----------  ---------  ---------");
+        Console.WriteLine($"Left   {FormatDouble(leftProfile.HeuristicScore),6}  {FormatDouble(leftProfile.AverageWordsPerSentence),8}  {FormatDouble(leftProfile.AverageCharactersPerWord),8}  {FormatProbability(leftProfile.LongWordShare),6}  {FormatProbability(leftProfile.VeryLongWordShare),11}  {FormatProbability(leftProfile.ContentWordShare),9}  {FormatDouble(leftProfile.LexicalDiversityPerThousand),9}");
+        Console.WriteLine($"Right  {FormatDouble(rightProfile.HeuristicScore),6}  {FormatDouble(rightProfile.AverageWordsPerSentence),8}  {FormatDouble(rightProfile.AverageCharactersPerWord),8}  {FormatProbability(rightProfile.LongWordShare),6}  {FormatProbability(rightProfile.VeryLongWordShare),11}  {FormatProbability(rightProfile.ContentWordShare),9}  {FormatDouble(rightProfile.LexicalDiversityPerThousand),9}");
+        Console.WriteLine();
+        double scoreDifference = leftProfile.HeuristicScore - rightProfile.HeuristicScore;
+        Console.WriteLine($"Score difference: {FormatSignedDouble(scoreDifference)}");
+        Console.WriteLine($"Relatively harder: {DifficultyDirection(scoreDifference)}");
 
         return 0;
     }
@@ -1004,6 +1232,10 @@ public static class Program
         Console.WriteLine("  stats summary <runId> [--db <file>]");
         Console.WriteLine("  stats books <runId> [--db <file>]");
         Console.WriteLine("  stats word-books <runId> <word> [--limit <n>] [--db <file>]");
+        Console.WriteLine("  stats compare-word <leftRunId> <rightRunId> <word> [--db <file>]");
+        Console.WriteLine("  stats compare-words <leftRunId> <rightRunId> [--limit <n>] [--min-count <n>] [--shared-only|--exclusive-only] [--content-only|--function-only] [--db <file>]");
+        Console.WriteLine("  stats difficulty <runId> [--long-word-length <n>] [--very-long-word-length <n>] [--db <file>]");
+        Console.WriteLine("  stats compare-difficulty <leftRunId> <rightRunId> [--long-word-length <n>] [--very-long-word-length <n>] [--db <file>]");
         Console.WriteLine("  stats collocations <runId> <word> [--window <n>] [--limit <n>] [--min-count <n>] [--min-dice <n>] [--content-only|--function-only] [--db <file>]");
         Console.WriteLine("  stats words <runId> [--limit <n>] [--content-only] [--function-only] [--db <file>]");
         Console.WriteLine("  stats word <runId> <word> [--limit <n>] [--db <file>]");
@@ -1039,6 +1271,8 @@ public static class Program
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats summary 1");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats books 1");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats word-books 1 alice --limit 25");
+        Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats compare-word 1 2 love");
+        Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats compare-words 1 2 --content-only --shared-only --min-count 5 --limit 25");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats collocations 1 alice --window 4 --content-only --min-count 3 --limit 25");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats phrases 1 --min-n 2 --max-n 5 --min-count 3 --min-chapters 2 --content-boundary --longest-only --limit 25");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats words 1 --limit 25");
@@ -1084,6 +1318,92 @@ public static class Program
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- analyze-epub-folder ./books --language en --corpus \"English Kids\" --out ./artifacts/books");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- analyze-epub-folder ./books --language en --recursive --out ./artifacts/books");
         Console.WriteLine();
+    }
+
+    private static bool TryReadTwoRunIds(string[] args, out long leftRunId, out long rightRunId)
+    {
+        leftRunId = 0;
+        rightRunId = 0;
+        if (args.Length < 2
+            || !long.TryParse(args[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out long parsedLeft)
+            || !long.TryParse(args[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out long parsedRight)
+            || parsedLeft <= 0
+            || parsedRight <= 0)
+        {
+            Console.Error.WriteLine("Missing or invalid analysis run ids.");
+            return false;
+        }
+
+        leftRunId = parsedLeft;
+        rightRunId = parsedRight;
+        return true;
+    }
+
+    private static bool ValidateComparisonRuns(
+        long leftRunId,
+        long rightRunId,
+        StoredAnalysisRunSummary? leftRun,
+        StoredAnalysisRunSummary? rightRun)
+    {
+        if (leftRun is null)
+        {
+            Console.Error.WriteLine($"Analysis run {leftRunId} was not found.");
+            return false;
+        }
+
+        if (rightRun is null)
+        {
+            Console.Error.WriteLine($"Analysis run {rightRunId} was not found.");
+            return false;
+        }
+
+        return true;
+    }
+
+    private static string RunComparisonLabel(StoredAnalysisRunSummary run)
+    {
+        return $"{run.CorpusName} / {run.BookTitle} ({run.Id})";
+    }
+
+    private static IReadOnlyList<WordComparison> BuildWordComparisons(
+        IReadOnlyList<StoredWordStatistic> leftWords,
+        IReadOnlyList<StoredWordStatistic> rightWords)
+    {
+        Dictionary<string, StoredWordStatistic> leftByWord = leftWords.ToDictionary(
+            word => word.Word,
+            StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, StoredWordStatistic> rightByWord = rightWords.ToDictionary(
+            word => word.Word,
+            StringComparer.OrdinalIgnoreCase);
+
+        string[] words = leftByWord.Keys
+            .Concat(rightByWord.Keys)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return words
+            .Select(word => CreateWordComparison(
+                word,
+                leftByWord.TryGetValue(word, out StoredWordStatistic? leftWord) ? leftWord : null,
+                rightByWord.TryGetValue(word, out StoredWordStatistic? rightWord) ? rightWord : null))
+            .ToArray();
+    }
+
+    private static WordComparison CreateWordComparison(
+        string requestedWord,
+        StoredWordStatistic? leftWord,
+        StoredWordStatistic? rightWord)
+    {
+        string word = leftWord?.Word ?? rightWord?.Word ?? requestedWord;
+        return new WordComparison(
+            word,
+            leftWord?.Count ?? 0,
+            leftWord?.DocumentCount ?? 0,
+            leftWord?.FrequencyPerMillion ?? 0,
+            rightWord?.Count ?? 0,
+            rightWord?.DocumentCount ?? 0,
+            rightWord?.FrequencyPerMillion ?? 0,
+            (leftWord?.IsStopWord ?? false) || (rightWord?.IsStopWord ?? false));
     }
 
     private static bool TryReadRunId(string[] args, out long analysisRunId)
@@ -1291,6 +1611,42 @@ public static class Program
         return StopWordProvider.IsStopWord(collocation.Collocate, languageCodes);
     }
 
+    private static async Task<string?> ReadRunLanguageCodeAsync(
+        SqliteCorpusStore store,
+        long analysisRunId)
+    {
+        IReadOnlyList<StoredAnalysisRunBook> sourceBooks = await store
+            .ListAnalysisRunBooksAsync(analysisRunId)
+            .ConfigureAwait(false);
+
+        string[] languageCodes = sourceBooks
+            .Select(book => book.LanguageCode)
+            .Where(code => !string.IsNullOrWhiteSpace(code))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return languageCodes.Length == 1 ? languageCodes[0] : null;
+    }
+
+    private static void WriteLanguageComparisonNote(string? leftLanguageCode, string? rightLanguageCode)
+    {
+        if (string.IsNullOrWhiteSpace(leftLanguageCode)
+            || string.IsNullOrWhiteSpace(rightLanguageCode)
+            || string.Equals(leftLanguageCode, rightLanguageCode, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        Console.WriteLine($"Note: runs have different languages ({leftLanguageCode} vs {rightLanguageCode}). Comparison is lexical, not translated.");
+    }
+
+    private static string FormatLanguageCodes(IReadOnlyList<string> languageCodes)
+    {
+        return languageCodes.Count == 0
+            ? "unknown"
+            : string.Join(", ", languageCodes);
+    }
+
     private static async Task<IReadOnlyList<string>> ReadRunLanguageCodesAsync(
         SqliteCorpusStore store,
         long analysisRunId)
@@ -1308,6 +1664,49 @@ public static class Program
         return languageCodes.Length == 0
             ? new[] { "en", "it", "fr", "de" }
             : languageCodes;
+    }
+
+    private static ComparisonPresenceFilter ReadComparisonPresenceFilter(CommandLineOptions options)
+    {
+        bool sharedOnly = options.Has("shared-only");
+        bool exclusiveOnly = options.Has("exclusive-only");
+
+        if (sharedOnly && exclusiveOnly)
+        {
+            throw new InvalidOperationException("Use either --shared-only or --exclusive-only, not both.");
+        }
+
+        if (sharedOnly)
+        {
+            return ComparisonPresenceFilter.SharedOnly;
+        }
+
+        if (exclusiveOnly)
+        {
+            return ComparisonPresenceFilter.ExclusiveOnly;
+        }
+
+        return ComparisonPresenceFilter.All;
+    }
+
+    private static bool MatchesPresenceFilter(WordComparison comparison, ComparisonPresenceFilter filter)
+    {
+        return filter switch
+        {
+            ComparisonPresenceFilter.SharedOnly => comparison.LeftCount > 0 && comparison.RightCount > 0,
+            ComparisonPresenceFilter.ExclusiveOnly => comparison.LeftCount == 0 || comparison.RightCount == 0,
+            _ => true
+        };
+    }
+
+    private static string ComparisonPresenceFilterLabel(ComparisonPresenceFilter filter)
+    {
+        return filter switch
+        {
+            ComparisonPresenceFilter.SharedOnly => "shared words only",
+            ComparisonPresenceFilter.ExclusiveOnly => "exclusive words only",
+            _ => "all words"
+        };
     }
 
     private static StoredWordFilter ReadWordFilter(CommandLineOptions options)
@@ -1333,6 +1732,16 @@ public static class Program
         return word.IsStopWord ? "function" : "content";
     }
 
+    private static string WordFilterLabel(StoredWordFilter filter)
+    {
+        return filter switch
+        {
+            StoredWordFilter.ContentOnly => "content words only",
+            StoredWordFilter.FunctionOnly => "function words only",
+            _ => "all words"
+        };
+    }
+
     private static long? TryReadLongOption(CommandLineOptions options, string key)
     {
         string? value = options.TryGet(key);
@@ -1349,8 +1758,44 @@ public static class Program
         return parsed;
     }
 
+    private static string DifficultyDirection(double scoreDifference)
+    {
+        const double epsilon = 0.000001;
+        if (Math.Abs(scoreDifference) < epsilon)
+        {
+            return "tie";
+        }
+
+        return scoreDifference > 0 ? "left" : "right";
+    }
+
     private static string FormatDouble(double value)
     {
+        return value.ToString("0.##", CultureInfo.InvariantCulture);
+    }
+
+    private static string FormatSignedDouble(double value)
+    {
+        return value.ToString("+0.##;-0.##;0", CultureInfo.InvariantCulture);
+    }
+
+    private static string FormatRatio(double value)
+    {
+        if (double.IsPositiveInfinity(value))
+        {
+            return "inf";
+        }
+
+        if (double.IsNaN(value))
+        {
+            return "n/a";
+        }
+
+        if (value > 0 && value < 0.01)
+        {
+            return "<0.01";
+        }
+
         return value.ToString("0.##", CultureInfo.InvariantCulture);
     }
 
@@ -1367,6 +1812,54 @@ public static class Program
     private static string TrimForColumn(string value, int maxLength)
     {
         return value.Length <= maxLength ? value : value[..(maxLength - 1)] + "…";
+    }
+
+    private enum ComparisonPresenceFilter
+    {
+        All,
+        SharedOnly,
+        ExclusiveOnly
+    }
+
+    private sealed record WordComparison(
+        string Word,
+        int LeftCount,
+        int LeftDocumentCount,
+        double LeftFrequencyPerMillion,
+        int RightCount,
+        int RightDocumentCount,
+        double RightFrequencyPerMillion,
+        bool IsFunctionWord)
+    {
+        public int TotalCount => LeftCount + RightCount;
+
+        public double CombinedCount => TotalCount;
+
+        public double LeftShare => CombinedCount == 0 ? 0 : LeftCount / CombinedCount;
+
+        public double RightShare => CombinedCount == 0 ? 0 : RightCount / CombinedCount;
+
+        public double DifferencePerMillion => LeftFrequencyPerMillion - RightFrequencyPerMillion;
+
+        public double AbsoluteDifferencePerMillion => Math.Abs(DifferencePerMillion);
+
+        public double Ratio => RightFrequencyPerMillion == 0
+            ? (LeftFrequencyPerMillion == 0 ? 0 : double.PositiveInfinity)
+            : LeftFrequencyPerMillion / RightFrequencyPerMillion;
+
+        public string Direction
+        {
+            get
+            {
+                const double epsilon = 0.000001;
+                if (Math.Abs(DifferencePerMillion) < epsilon)
+                {
+                    return "tie";
+                }
+
+                return DifferencePerMillion > 0 ? "left" : "right";
+            }
+        }
     }
 
     private sealed class CommandLineOptions

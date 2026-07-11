@@ -1,0 +1,25 @@
+namespace CorpusLens.Domain.Storage;
+
+public sealed record StoredDifficultyProfile(
+    long AnalysisRunId,
+    long CorpusId,
+    string CorpusName,
+    long BookId,
+    string BookTitle,
+    int SentenceCount,
+    int WordTokenCount,
+    int DistinctWordCount,
+    double AverageWordsPerSentence,
+    double AverageCharactersPerWord,
+    int ContentWordTokens,
+    int FunctionWordTokens,
+    int LongWordTokens,
+    int VeryLongWordTokens,
+    int LongWordLength,
+    int VeryLongWordLength,
+    double ContentWordShare,
+    double FunctionWordShare,
+    double LongWordShare,
+    double VeryLongWordShare,
+    double LexicalDiversityPerThousand,
+    double HeuristicScore);

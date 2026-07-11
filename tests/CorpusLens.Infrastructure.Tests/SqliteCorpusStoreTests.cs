@@ -777,6 +777,64 @@ public sealed class SqliteCorpusStoreTests
     }
 
 
+    [Fact]
+    public async Task GetDifficultyProfileAsync_ShouldComputeRelativeDifficultyMetrics()
+    {
+        using TestDatabase database = new();
+        string sourceFile = database.CreateSourceFile("difficulty.epub", "fake epub content");
+        SqliteCorpusStore store = new(database.Path);
+        StoredCorpus corpus = await store.CreateCorpusAsync("English Literature", "en");
+
+        ImportedBook book = new(
+            "book-1",
+            "Difficulty Sample",
+            "Author",
+            "en",
+            sourceFile,
+            new[] { new ImportedChapter(1, "Chapter I", "chapter1.xhtml", string.Empty, "The cat met an extraordinary elephant.") });
+
+        StoredBookImport storedImport = await store.SaveImportedBookAsync(corpus.Id, book);
+        CorpusAnalysisResult analysis = new(
+            new CorpusSummary(1, 2, 12, 10, 4, 5.0, 6.0),
+            new[]
+            {
+                new WordFrequency("the", 2, 1, 200000, true),
+                new WordFrequency("cat", 2, 1, 200000, false),
+                new WordFrequency("elephant", 3, 1, 300000, false),
+                new WordFrequency("extraordinary", 3, 1, 300000, false)
+            },
+            Array.Empty<NGramFrequency>(),
+            Array.Empty<NextWordFrequency>(),
+            Array.Empty<AnalyzedSentence>());
+
+        StoredAnalysisRun run = await store.SaveAnalysisRunAsync(
+            corpus.Id,
+            storedImport.Book.Id,
+            new AnalysisSettings(),
+            analysis,
+            "report.md",
+            "words.csv",
+            "ngrams.csv",
+            "next_words.csv",
+            "extracted_text.txt");
+
+        StoredDifficultyProfile? profile = await store.GetDifficultyProfileAsync(run.Id);
+
+        Assert.NotNull(profile);
+        Assert.Equal(run.Id, profile!.AnalysisRunId);
+        Assert.Equal(8, profile.ContentWordTokens);
+        Assert.Equal(2, profile.FunctionWordTokens);
+        Assert.Equal(6, profile.LongWordTokens);
+        Assert.Equal(3, profile.VeryLongWordTokens);
+        Assert.Equal(0.8, profile.ContentWordShare, precision: 6);
+        Assert.Equal(0.2, profile.FunctionWordShare, precision: 6);
+        Assert.Equal(0.6, profile.LongWordShare, precision: 6);
+        Assert.Equal(0.3, profile.VeryLongWordShare, precision: 6);
+        Assert.Equal(400.0, profile.LexicalDiversityPerThousand, precision: 6);
+        Assert.True(profile.HeuristicScore > 0);
+    }
+
+
 
     private sealed class TestDatabase : IDisposable
     {
