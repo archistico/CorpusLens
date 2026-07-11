@@ -201,7 +201,7 @@ The Avalonia desktop project is available as an early shell:
 make desktop
 ```
 
-The desktop app can open an existing `corpuslens.db`, list runs, select a run, and show a compact dashboard with core metrics, language profile, difficulty summary, top content/function words, recurring phrases and token-index health. Database and dashboard loading run in the background and show a progress indicator so the UI stays responsive. Import and advanced explorers remain CLI-first for now.
+The desktop app can open an existing `corpuslens.db`, list runs, select a run, and show a compact dashboard with core metrics, language profile, difficulty summary, top content/function words, recurring phrases and token-index health. Database and dashboard loading run in the background and show a progress indicator so the UI stays responsive.
 
 ## Development
 
@@ -236,4 +236,8 @@ Run the Avalonia desktop shell with:
 make desktop
 ```
 
-The desktop UI can open an existing `corpuslens.db`, list analysis runs, show a run dashboard, search words, and explore collocations.
+The desktop UI can open an existing `corpuslens.db`, list analysis runs, show a run dashboard, search words, explore collocations, and explore recurring phrases.
+
+### Desktop compare runs
+
+The Avalonia desktop app includes a Compare runs panel for lexical comparison between two analysis runs, including single-word comparison, top word differences, shared/exclusive filters, and difficulty comparison.

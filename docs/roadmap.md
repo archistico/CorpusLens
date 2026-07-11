@@ -1339,3 +1339,11 @@ Desktop word search panel with summary, next/previous words, KWIC contexts and b
 ## Milestone 18.5 — Desktop collocations explorer
 
 Adds the first desktop collocations explorer with target word, window, thresholds, all/content/function filters and asynchronous loading. See `docs/milestone-18-5-collocations-explorer.md`.
+
+## Milestone 18.6 — Desktop phrase explorer
+
+Adds a desktop phrase mining panel with min/max n, min count, min chapters, content-boundary and longest-only filters. The UI loads phrase results asynchronously through `CorpusLens.Application/Queries`, preserving the existing Desktop → Application → Infrastructure flow.
+
+## Milestone 18.7 — Compare runs explorer
+
+Desktop UI panel for comparing two runs: optional single-word comparison, top lexical differences, shared/exclusive filters, and relative difficulty comparison.

@@ -16,6 +16,8 @@ public sealed class MainWindowViewModel : ViewModelBase
     private const int WordExplorerContextWords = 8;
     private const int WordExplorerBookLimit = 10;
     private const int CollocationExplorerDefaultLimit = 30;
+    private const int PhraseExplorerDefaultLimit = 30;
+    private const int CompareExplorerDefaultLimit = 30;
 
     private string _databasePath = "No database selected";
     private string _statusMessage = "Ready";
@@ -42,7 +44,23 @@ public sealed class MainWindowViewModel : ViewModelBase
     private string _collocationExplorerSummary = "Select a run and search collocations.";
     private string _collocationResults = "Collocations will appear here.";
     private string _collocationFilterLabel = "Filter: all words";
+    private string _phraseExplorerTitle = "Phrase explorer";
+    private string _phraseExplorerSummary = "Select a run and search phrases.";
+    private string _phraseResults = "Phrases will appear here.";
+    private string _phraseBoundaryLabel = "Filter: all phrases";
+    private string _comparisonExplorerTitle = "Compare runs";
+    private string _comparisonExplorerSummary = "Open a database with at least two runs to compare corpora.";
+    private string _comparisonWordSummary = "Word comparison will appear here.";
+    private string _comparisonWords = "Word differences will appear here.";
+    private string _comparisonDifficulty = "Difficulty comparison will appear here.";
+    private string _comparisonWordFilterLabel = "Word filter: content words only";
+    private string _comparisonPresenceLabel = "Presence: all words";
+    private bool _phraseContentBoundaryOnly;
+    private bool _phraseLongestOnly;
     private CollocationExplorerFilter _collocationFilter = CollocationExplorerFilter.All;
+    private ComparisonWordFilter _comparisonWordFilter = ComparisonWordFilter.ContentOnly;
+    private ComparisonPresenceFilter _comparisonPresenceFilter = ComparisonPresenceFilter.All;
+    private RunListItemViewModel? _comparisonRightRun;
 
     public string DatabasePath
     {
@@ -209,6 +227,121 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
     }
 
+
+    public string PhraseExplorerTitle
+    {
+        get => _phraseExplorerTitle;
+        private set => SetProperty(ref _phraseExplorerTitle, value);
+    }
+
+    public string PhraseExplorerSummary
+    {
+        get => _phraseExplorerSummary;
+        private set => SetProperty(ref _phraseExplorerSummary, value);
+    }
+
+    public string PhraseResults
+    {
+        get => _phraseResults;
+        private set => SetProperty(ref _phraseResults, value);
+    }
+
+    public string PhraseBoundaryLabel
+    {
+        get => _phraseBoundaryLabel;
+        private set => SetProperty(ref _phraseBoundaryLabel, value);
+    }
+
+    public bool PhraseContentBoundaryOnly
+    {
+        get => _phraseContentBoundaryOnly;
+        private set
+        {
+            if (SetProperty(ref _phraseContentBoundaryOnly, value))
+            {
+                PhraseBoundaryLabel = value ? "Filter: content-word boundary" : "Filter: all phrases";
+            }
+        }
+    }
+
+    public bool PhraseLongestOnly
+    {
+        get => _phraseLongestOnly;
+        private set => SetProperty(ref _phraseLongestOnly, value);
+    }
+
+    public RunListItemViewModel? ComparisonRightRun
+    {
+        get => _comparisonRightRun;
+        private set => SetProperty(ref _comparisonRightRun, value);
+    }
+
+    public string ComparisonExplorerTitle
+    {
+        get => _comparisonExplorerTitle;
+        private set => SetProperty(ref _comparisonExplorerTitle, value);
+    }
+
+    public string ComparisonExplorerSummary
+    {
+        get => _comparisonExplorerSummary;
+        private set => SetProperty(ref _comparisonExplorerSummary, value);
+    }
+
+    public string ComparisonWordSummary
+    {
+        get => _comparisonWordSummary;
+        private set => SetProperty(ref _comparisonWordSummary, value);
+    }
+
+    public string ComparisonWords
+    {
+        get => _comparisonWords;
+        private set => SetProperty(ref _comparisonWords, value);
+    }
+
+    public string ComparisonDifficulty
+    {
+        get => _comparisonDifficulty;
+        private set => SetProperty(ref _comparisonDifficulty, value);
+    }
+
+    public string ComparisonWordFilterLabel
+    {
+        get => _comparisonWordFilterLabel;
+        private set => SetProperty(ref _comparisonWordFilterLabel, value);
+    }
+
+    public string ComparisonPresenceLabel
+    {
+        get => _comparisonPresenceLabel;
+        private set => SetProperty(ref _comparisonPresenceLabel, value);
+    }
+
+    public ComparisonWordFilter ComparisonWordFilter
+    {
+        get => _comparisonWordFilter;
+        private set
+        {
+            if (SetProperty(ref _comparisonWordFilter, value))
+            {
+                ComparisonWordFilterLabel = $"Word filter: {ComparisonWordFilterText(value)}";
+            }
+        }
+    }
+
+    public ComparisonPresenceFilter ComparisonPresenceFilter
+    {
+        get => _comparisonPresenceFilter;
+        private set
+        {
+            if (SetProperty(ref _comparisonPresenceFilter, value))
+            {
+                ComparisonPresenceLabel = $"Presence: {ComparisonPresenceFilterText(value)}";
+            }
+        }
+    }
+
     private void BeginBusy(string message)
     {
         IsBusy = true;
@@ -266,6 +399,7 @@ public sealed class MainWindowViewModel : ViewModelBase
             {
                 Runs.Add(new RunListItemViewModel(run));
             }
+            EnsureDefaultComparisonRightRun();
 
             if (Runs.Count == 0)
             {
@@ -339,6 +473,9 @@ public sealed class MainWindowViewModel : ViewModelBase
             : $"Report: {run.ReportPath}";
         ClearWordExplorer("Search a word in the selected run.");
         ClearCollocationExplorer("Search collocations in the selected run.");
+        ClearPhraseExplorer("Search phrases in the selected run.");
+        EnsureDefaultComparisonRightRun();
+        ClearComparisonExplorer("Choose a right run and compare corpora.");
 
         StatusMessage = $"Loading health for run {run.Id}...";
         Task healthTask = LoadHealthAsync(run.Id, cancellationToken);
@@ -614,6 +751,262 @@ public sealed class MainWindowViewModel : ViewModelBase
         CollocationResults = "Collocations will appear here.";
     }
 
+    public void SetPhraseContentBoundary(bool enabled)
+    {
+        PhraseContentBoundaryOnly = enabled;
+    }
+
+    public void SetPhraseLongestOnly(bool enabled)
+    {
+        PhraseLongestOnly = enabled;
+    }
+
+    public async Task SearchPhrasesAsync(
+        string? minNText,
+        string? maxNText,
+        string? minCountText,
+        string? minChaptersText,
+        string? limitText,
+        CancellationToken cancellationToken = default)
+    {
+        if (SelectedRun is null)
+        {
+            ClearPhraseExplorer("Select a run before searching phrases.");
+            StatusMessage = "Select a run before searching phrases.";
+            return;
+        }
+
+        int minN = ParseIntOrDefault(minNText, 2);
+        int maxN = ParseIntOrDefault(maxNText, 5);
+        int minCount = ParseIntOrDefault(minCountText, 3);
+        int minChapters = ParseIntOrDefault(minChaptersText, 2);
+        int limit = ParseIntOrDefault(limitText, PhraseExplorerDefaultLimit);
+
+        try
+        {
+            BeginBusy($"Loading phrases for run {SelectedRun.Id}...");
+            string databasePath = DatabasePath;
+            long runId = SelectedRun.Id;
+            bool contentBoundaryOnly = PhraseContentBoundaryOnly;
+            bool longestOnly = PhraseLongestOnly;
+
+            PhraseExplorerResult result = await Task.Run(async () =>
+            {
+                PhraseExplorerQueryService service = new();
+                return await service.GetPhrasesAsync(new PhraseExplorerRequest(
+                        databasePath,
+                        runId,
+                        minN,
+                        maxN,
+                        minCount,
+                        minChapters,
+                        limit,
+                        contentBoundaryOnly,
+                        longestOnly),
+                    cancellationToken)
+                    .ConfigureAwait(false);
+            }, cancellationToken).ConfigureAwait(true);
+
+            cancellationToken.ThrowIfCancellationRequested();
+            ApplyPhraseExplorerResult(result);
+            StatusMessage = $"Loaded {result.Phrases.Count:n0} phrase(s).";
+        }
+        catch (OperationCanceledException)
+        {
+            StatusMessage = "Phrase search cancelled.";
+        }
+        catch (Exception ex)
+        {
+            ClearPhraseExplorer($"Phrase search error: {ex.Message}");
+            StatusMessage = $"Error searching phrases: {ex.Message}";
+        }
+        finally
+        {
+            EndBusy();
+        }
+    }
+
+    private void ApplyPhraseExplorerResult(PhraseExplorerResult result)
+    {
+        PhraseExplorerTitle = "Phrase explorer";
+        PhraseExplorerSummary = string.Join(Environment.NewLine,
+            result.MinN == result.MaxN ? $"N: {result.MinN}" : $"N range: {result.MinN}-{result.MaxN}",
+            $"Minimum count: {result.MinCount:n0}",
+            $"Minimum chapters: {result.MinChapters:n0}",
+            result.ContentBoundaryOnly ? "Filter: content-word boundary" : "Filter: all phrases",
+            result.LongestOnly ? "Nested phrases: longest only" : "Nested phrases: shown",
+            $"Fetched candidates: {result.FetchedCount:n0}",
+            $"Matched phrases: {result.MatchedCount:n0}",
+            $"Shown phrases: {result.Phrases.Count:n0} of {result.MatchedCount:n0}");
+        PhraseResults = FormatPhraseExplorerItems(result.Phrases);
+    }
+
+    private void ClearPhraseExplorer(string message)
+    {
+        PhraseExplorerTitle = "Phrase explorer";
+        PhraseExplorerSummary = message;
+        PhraseResults = "Phrases will appear here.";
+    }
+
+
+    public void SetComparisonRightRun(RunListItemViewModel? run)
+    {
+        ComparisonRightRun = run;
+    }
+
+    public void SetComparisonWordFilter(ComparisonWordFilter filter)
+    {
+        ComparisonWordFilter = filter;
+    }
+
+    public void SetComparisonPresenceFilter(ComparisonPresenceFilter filter)
+    {
+        ComparisonPresenceFilter = filter;
+    }
+
+    public async Task CompareRunsAsync(
+        string? wordText,
+        string? minCountText,
+        string? limitText,
+        CancellationToken cancellationToken = default)
+    {
+        if (SelectedRun is null)
+        {
+            ClearComparisonExplorer("Select a left run before comparing corpora.");
+            StatusMessage = "Select a left run before comparing corpora.";
+            return;
+        }
+
+        if (ComparisonRightRun is null)
+        {
+            ClearComparisonExplorer("Choose a right run before comparing corpora.");
+            StatusMessage = "Choose a right run before comparing corpora.";
+            return;
+        }
+
+        if (SelectedRun.Id == ComparisonRightRun.Id)
+        {
+            ClearComparisonExplorer("Choose two different runs.");
+            StatusMessage = "Choose two different runs to compare.";
+            return;
+        }
+
+        string word = wordText?.Trim() ?? string.Empty;
+        int minCount = ParseIntOrDefault(minCountText, 5);
+        int limit = ParseIntOrDefault(limitText, CompareExplorerDefaultLimit);
+
+        try
+        {
+            BeginBusy($"Comparing run {SelectedRun.Id} and run {ComparisonRightRun.Id}...");
+            string databasePath = DatabasePath;
+            long leftRunId = SelectedRun.Id;
+            long rightRunId = ComparisonRightRun.Id;
+            ComparisonWordFilter wordFilter = ComparisonWordFilter;
+            ComparisonPresenceFilter presenceFilter = ComparisonPresenceFilter;
+
+            RunComparisonQueryService service = new();
+            Task<CompareWordResult?> wordTask = string.IsNullOrWhiteSpace(word)
+                ? Task.FromResult<CompareWordResult?>(null)
+                : Task.Run(async () => (CompareWordResult?)await service.CompareWordAsync(new CompareWordRequest(
+                        databasePath,
+                        leftRunId,
+                        rightRunId,
+                        word),
+                    cancellationToken).ConfigureAwait(false), cancellationToken);
+
+            Task<CompareWordsResult> wordsTask = Task.Run(async () => await service.CompareWordsAsync(new CompareWordsRequest(
+                    databasePath,
+                    leftRunId,
+                    rightRunId,
+                    limit,
+                    minCount,
+                    wordFilter,
+                    presenceFilter),
+                cancellationToken).ConfigureAwait(false), cancellationToken);
+
+            Task<CompareDifficultyResult> difficultyTask = Task.Run(async () => await service.CompareDifficultyAsync(new CompareDifficultyRequest(
+                    databasePath,
+                    leftRunId,
+                    rightRunId),
+                cancellationToken).ConfigureAwait(false), cancellationToken);
+
+            await Task.WhenAll(wordTask, wordsTask, difficultyTask).ConfigureAwait(true);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            ApplyComparisonResults(
+                wordTask.Result,
+                wordsTask.Result,
+                difficultyTask.Result);
+            StatusMessage = $"Compared run {leftRunId} and run {rightRunId}.";
+        }
+        catch (OperationCanceledException)
+        {
+            StatusMessage = "Run comparison cancelled.";
+        }
+        catch (Exception ex)
+        {
+            ClearComparisonExplorer($"Comparison error: {ex.Message}");
+            StatusMessage = $"Error comparing runs: {ex.Message}";
+        }
+        finally
+        {
+            EndBusy();
+        }
+    }
+
+    private void ApplyComparisonResults(
+        CompareWordResult? wordResult,
+        CompareWordsResult wordsResult,
+        CompareDifficultyResult difficultyResult)
+    {
+        RunComparisonContext context = wordsResult.Context;
+        ComparisonExplorerTitle = "Compare runs";
+        ComparisonExplorerSummary = string.Join(Environment.NewLine,
+            $"Left: {RunLabel(context.LeftRun)}",
+            $"Right: {RunLabel(context.RightRun)}",
+            context.HasDifferentLanguages
+                ? $"Note: lexical comparison, not translated ({context.LeftLanguageCode} vs {context.RightLanguageCode})."
+                : "Languages: comparable lexical forms",
+            $"Word filter: {ComparisonWordFilterText(wordsResult.WordFilter)}",
+            $"Presence: {ComparisonPresenceFilterText(wordsResult.PresenceFilter)}",
+            $"Minimum count: {wordsResult.MinCount:n0}",
+            $"Matched words: {wordsResult.MatchedCount:n0}",
+            $"Shown words: {wordsResult.Comparisons.Count:n0} of {wordsResult.MatchedCount:n0}");
+        ComparisonWordSummary = wordResult is null
+            ? "Enter a word to compare one form directly."
+            : FormatCompareWord(wordResult);
+        ComparisonWords = FormatCompareWords(wordsResult.Comparisons);
+        ComparisonDifficulty = FormatCompareDifficulty(difficultyResult);
+    }
+
+    private void ClearComparisonExplorer(string message)
+    {
+        ComparisonExplorerTitle = "Compare runs";
+        ComparisonExplorerSummary = message;
+        ComparisonWordSummary = "Word comparison will appear here.";
+        ComparisonWords = "Word differences will appear here.";
+        ComparisonDifficulty = "Difficulty comparison will appear here.";
+    }
+
+    private void EnsureDefaultComparisonRightRun()
+    {
+        if (Runs.Count == 0)
+        {
+            ComparisonRightRun = null;
+            return;
+        }
+
+        if (ComparisonRightRun is not null
+            && Runs.Any(run => ReferenceEquals(run, ComparisonRightRun))
+            && (SelectedRun is null || ComparisonRightRun.Id != SelectedRun.Id))
+        {
+            return;
+        }
+
+        ComparisonRightRun = Runs.FirstOrDefault(run => SelectedRun is null || run.Id != SelectedRun.Id)
+            ?? Runs.FirstOrDefault();
+    }
+
     private void ClearSelectedRun(string message)
     {
         SelectedRun = null;
@@ -630,6 +1023,8 @@ public sealed class MainWindowViewModel : ViewModelBase
         ReportPath = "Report path will appear here.";
         ClearWordExplorer("Select a run and search a word.");
         ClearCollocationExplorer("Select a run and search collocations.");
+        ClearPhraseExplorer("Select a run and search phrases.");
+        ClearComparisonExplorer("Select a left run before comparing corpora.");
     }
 
     private static string FormatCoreMetrics(StoredAnalysisRunSummary run)
@@ -781,6 +1176,62 @@ public sealed class MainWindowViewModel : ViewModelBase
         return string.Join(Environment.NewLine, lines);
     }
 
+    private static string FormatPhraseExplorerItems(IReadOnlyList<PhraseExplorerItem> phrases)
+    {
+        if (phrases.Count == 0)
+        {
+            return "No phrases found for the selected thresholds.";
+        }
+
+        IEnumerable<string> lines = phrases.Select((item, index) =>
+            $"{index + 1,2}. {TrimForColumn(item.Phrase, 30),-30} n {item.N}  {item.Count,5:n0}  ch {item.ChapterCount,4:n0}  {FormatDouble(item.FrequencyPerMillion),8}/M  {item.Boundary}");
+        return string.Join(Environment.NewLine, lines);
+    }
+
+
+    private static string FormatCompareWord(CompareWordResult result)
+    {
+        WordComparisonItem item = result.Comparison;
+        return string.Join(Environment.NewLine,
+            $"Word: {item.Word}",
+            $"Type: {(item.IsFunctionWord ? "function" : "content")}",
+            $"Left count: {item.LeftCount:n0} ({FormatDouble(item.LeftFrequencyPerMillion)}/M)",
+            $"Right count: {item.RightCount:n0} ({FormatDouble(item.RightFrequencyPerMillion)}/M)",
+            $"Difference/M: {FormatSignedDouble(item.DifferencePerMillion)}",
+            $"Ratio left/right: {FormatRatio(item.Ratio)}",
+            $"Favours: {item.Direction}");
+    }
+
+    private static string FormatCompareWords(IReadOnlyList<WordComparisonItem> comparisons)
+    {
+        if (comparisons.Count == 0)
+        {
+            return "No word differences matched the selected filters.";
+        }
+
+        IEnumerable<string> lines = comparisons.Select((item, index) =>
+            $"{index + 1,2}. {TrimForColumn(item.Word, 16),-16} {(item.IsFunctionWord ? "function" : "content"),-8} L {item.LeftCount,6:n0} {FormatDouble(item.LeftFrequencyPerMillion),7}/M  R {item.RightCount,6:n0} {FormatDouble(item.RightFrequencyPerMillion),7}/M  Δ {FormatSignedDouble(item.DifferencePerMillion),8}  {item.Direction}");
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    private static string FormatCompareDifficulty(CompareDifficultyResult result)
+    {
+        return string.Join(Environment.NewLine,
+            $"Language profile: {(result.LanguageProfile.IsKnown ? $"{result.LanguageProfile.Name} ({result.LanguageProfile.Code})" : $"generic defaults ({result.LanguageProfile.Code})")}",
+            $"Thresholds: >= {result.Thresholds.LongWordLength} / >= {result.Thresholds.VeryLongWordLength} chars",
+            $"Left score: {FormatDouble(result.LeftProfile.HeuristicScore)}",
+            $"Right score: {FormatDouble(result.RightProfile.HeuristicScore)}",
+            $"Score difference: {FormatSignedDouble(result.ScoreDifference)}",
+            $"Relatively harder: {result.Direction}",
+            $"Left avg sent/word: {FormatDouble(result.LeftProfile.AverageWordsPerSentence)} / {FormatDouble(result.LeftProfile.AverageCharactersPerWord)}",
+            $"Right avg sent/word: {FormatDouble(result.RightProfile.AverageWordsPerSentence)} / {FormatDouble(result.RightProfile.AverageCharactersPerWord)}");
+    }
+
+    private static string RunLabel(StoredAnalysisRunSummary run)
+    {
+        return $"{run.CorpusName} / {run.BookTitle} ({run.Id})";
+    }
+
     private static string WordTypeLabel(StoredWordStatistic word)
     {
         return word.IsStopWord ? "function" : "content";
@@ -801,6 +1252,27 @@ public sealed class MainWindowViewModel : ViewModelBase
         return double.TryParse(value, out double parsed) ? parsed : fallback;
     }
 
+
+    private static string ComparisonWordFilterText(ComparisonWordFilter filter)
+    {
+        return filter switch
+        {
+            ComparisonWordFilter.ContentOnly => "content words only",
+            ComparisonWordFilter.FunctionOnly => "function words only",
+            _ => "all words"
+        };
+    }
+
+    private static string ComparisonPresenceFilterText(ComparisonPresenceFilter filter)
+    {
+        return filter switch
+        {
+            ComparisonPresenceFilter.SharedOnly => "shared words only",
+            ComparisonPresenceFilter.ExclusiveOnly => "exclusive words only",
+            _ => "all words"
+        };
+    }
+
     private static string CollocationFilterText(CollocationExplorerFilter filter)
     {
         return filter switch
@@ -816,6 +1288,37 @@ public sealed class MainWindowViewModel : ViewModelBase
         return languageCodes.Count == 0
             ? "unknown"
             : string.Join(", ", languageCodes);
+    }
+
+
+    private static string FormatSignedDouble(double value)
+    {
+        if (Math.Abs(value) < 0.005)
+        {
+            return "0";
+        }
+
+        return value > 0 ? $"+{FormatDouble(value)}" : FormatDouble(value);
+    }
+
+    private static string FormatRatio(double value)
+    {
+        if (double.IsPositiveInfinity(value))
+        {
+            return "inf";
+        }
+
+        if (double.IsNaN(value))
+        {
+            return "n/a";
+        }
+
+        if (value > 0 && value < 0.01)
+        {
+            return "<0.01";
+        }
+
+        return FormatDouble(value);
     }
 
     private static string FormatDouble(double value)
