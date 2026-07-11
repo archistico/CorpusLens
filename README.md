@@ -7,7 +7,7 @@ It is CLI-first, testable, and stores analysis data in SQLite so that corpora ca
 ## Features
 
 - EPUB and plain-text analysis
-- English, Italian, French and German stop-word profiles
+- English, Italian, French and German language profiles
 - word frequencies, content/function word views, n-grams and next-word statistics
 - word detail with previous/next words
 - KWIC contexts
@@ -103,14 +103,22 @@ make stats-compare-words-content RUN_A=1 RUN_B=2 LIMIT=30 MIN_COUNT=5 EXCLUSIVE_
 
 Comparisons are lexical. If two runs use different languages, CorpusLens prints a note and does not translate equivalent concepts.
 
+Language profiles:
+
+```powershell
+make stats-language-profiles
+make stats-language-profile LANG=it
+```
+
 Difficulty:
 
 ```powershell
 make stats-difficulty RUN=1
 make stats-compare-difficulty RUN_A=1 RUN_B=2
+make stats-difficulty RUN=1 LONG_WORD_LENGTH=8 VERY_LONG_WORD_LENGTH=12
 ```
 
-Difficulty is a relative heuristic based on sentence length, word length, long-word share, content-word share and lexical diversity. It is useful for comparing similar corpora, not as an absolute reading-grade formula.
+Difficulty is a relative heuristic based on sentence length, word length, long-word share, content-word share and lexical diversity. By default it uses the run language profile for long-word thresholds. It is useful for comparing similar corpora, not as an absolute reading-grade formula.
 
 Collocations:
 

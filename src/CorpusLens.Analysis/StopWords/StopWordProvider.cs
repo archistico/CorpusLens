@@ -103,7 +103,27 @@ public static class StopWordProvider
         return false;
     }
 
-    private static string NormalizeLanguageCode(string languageCode)
+    public static int CountStopWords(string languageCode)
+    {
+        if (string.IsNullOrWhiteSpace(languageCode))
+        {
+            return 0;
+        }
+
+        string normalizedLanguageCode = NormalizeLanguageCode(languageCode);
+        return StopWordsByLanguage.TryGetValue(normalizedLanguageCode, out HashSet<string>? stopWords)
+            ? stopWords.Count
+            : 0;
+    }
+
+    public static IReadOnlyList<string> SupportedLanguageCodes()
+    {
+        return StopWordsByLanguage.Keys
+            .OrderBy(code => code, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    public static string NormalizeLanguageCode(string languageCode)
     {
         string trimmed = languageCode.Trim().ToLowerInvariant();
         int separatorIndex = trimmed.IndexOfAny(new[] { '-', '_' });

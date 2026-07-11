@@ -15,6 +15,8 @@
 #   make stats-compare-words RUN_A=1 RUN_B=2 LIMIT=25 MIN_COUNT=5 SHARED_ONLY=--shared-only
 #   make stats-difficulty RUN=1
 #   make stats-compare-difficulty RUN_A=1 RUN_B=2
+#   make stats-language-profiles
+#   make stats-language-profile LANG=it
 #   make stats-collocations RUN=1 WORD=alice WINDOW=4 LIMIT=25 MIN_COUNT=1 MIN_DICE=0.0
 #   make stats-collocations-content RUN=1 WORD=whale WINDOW=4 LIMIT=25 MIN_COUNT=3
 #   make stats-collocations-function RUN=1 WORD=love WINDOW=4 LIMIT=25 MIN_COUNT=3
@@ -48,8 +50,8 @@ CONTEXT ?= 8
 WINDOW ?= 4
 MIN_COUNT ?= 1
 MIN_DICE ?= 0.0
-LONG_WORD_LENGTH ?= 7
-VERY_LONG_WORD_LENGTH ?= 10
+LONG_WORD_LENGTH ?=
+VERY_LONG_WORD_LENGTH ?=
 SHARED_ONLY ?=
 EXCLUSIVE_ONLY ?=
 MIN_CHAPTERS ?= 1
@@ -57,8 +59,9 @@ LONGEST_ONLY ?=
 MIN_N ?= 2
 MAX_N ?= 5
 DIAGNOSTICS_OUT ?= ./artifacts/diagnostics/import_diagnostics.md
+DIFFICULTY_LENGTH_ARGS = $(if $(LONG_WORD_LENGTH),--long-word-length $(LONG_WORD_LENGTH),) $(if $(VERY_LONG_WORD_LENGTH),--very-long-word-length $(VERY_LONG_WORD_LENGTH),)
 
-.PHONY: restore build test check demo clean clean-data clean-artifacts setup-books corpus-create corpus-create-en corpus-create-it corpus-list analyze-text analyze-book analyze-books analyze-books-recursive analyze-en analyze-it analyze-en-recursive analyze-it-recursive stats-runs stats-summary stats-books stats-words stats-content stats-function stats-word stats-word-books stats-compare-word stats-compare-words stats-compare-words-content stats-compare-words-function stats-compare-words-shared stats-compare-words-exclusive stats-difficulty stats-compare-difficulty stats-collocations stats-collocations-content stats-collocations-function stats-phrases stats-phrases-content-boundary stats-kwic stats-ngrams stats-trigrams stats-next stats-categories inspect-run
+.PHONY: restore build test check demo clean clean-data clean-artifacts setup-books corpus-create corpus-create-en corpus-create-it corpus-list analyze-text analyze-book analyze-books analyze-books-recursive analyze-en analyze-it analyze-en-recursive analyze-it-recursive stats-runs stats-summary stats-books stats-words stats-content stats-function stats-word stats-word-books stats-compare-word stats-compare-words stats-compare-words-content stats-compare-words-function stats-compare-words-shared stats-compare-words-exclusive stats-difficulty stats-compare-difficulty stats-language-profiles stats-language-profile stats-collocations stats-collocations-content stats-collocations-function stats-phrases stats-phrases-content-boundary stats-kwic stats-ngrams stats-trigrams stats-next stats-categories inspect-run
 
 restore:
 	$(DOTNET) restore
@@ -166,10 +169,16 @@ stats-compare-words-exclusive:
 
 
 stats-difficulty:
-	$(DOTNET) run --project $(PROJECT) -- stats difficulty $(RUN) --long-word-length $(LONG_WORD_LENGTH) --very-long-word-length $(VERY_LONG_WORD_LENGTH) --db $(DB)
+	$(DOTNET) run --project $(PROJECT) -- stats difficulty $(RUN) $(DIFFICULTY_LENGTH_ARGS) --db $(DB)
 
 stats-compare-difficulty:
-	$(DOTNET) run --project $(PROJECT) -- stats compare-difficulty $(RUN_A) $(RUN_B) --long-word-length $(LONG_WORD_LENGTH) --very-long-word-length $(VERY_LONG_WORD_LENGTH) --db $(DB)
+	$(DOTNET) run --project $(PROJECT) -- stats compare-difficulty $(RUN_A) $(RUN_B) $(DIFFICULTY_LENGTH_ARGS) --db $(DB)
+
+stats-language-profiles:
+	$(DOTNET) run --project $(PROJECT) -- stats language-profiles
+
+stats-language-profile:
+	$(DOTNET) run --project $(PROJECT) -- stats language-profile $(LANG)
 
 stats-collocations:
 	$(DOTNET) run --project $(PROJECT) -- stats collocations $(RUN) "$(WORD)" --window $(WINDOW) --limit $(LIMIT) --min-count $(MIN_COUNT) --min-dice $(MIN_DICE) --db $(DB)

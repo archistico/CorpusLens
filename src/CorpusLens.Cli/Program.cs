@@ -1,4 +1,5 @@
 using System.Globalization;
+using CorpusLens.Analysis.Language;
 using CorpusLens.Analysis.StopWords;
 using CorpusLens.Application.EpubAnalysis;
 using CorpusLens.Application.Storage;
@@ -254,6 +255,8 @@ public static class Program
             "compare-words" => await PrintCompareWordsAsync(subCommandArgs).ConfigureAwait(false),
             "difficulty" => await PrintDifficultyAsync(subCommandArgs).ConfigureAwait(false),
             "compare-difficulty" => await PrintCompareDifficultyAsync(subCommandArgs).ConfigureAwait(false),
+            "language-profiles" => PrintLanguageProfiles(subCommandArgs),
+            "language-profile" => PrintLanguageProfile(subCommandArgs),
             "collocations" => await PrintCollocationsAsync(subCommandArgs).ConfigureAwait(false),
             "phrases" => await PrintPhrasesAsync(subCommandArgs).ConfigureAwait(false),
             "words" => await PrintTopWordsAsync(subCommandArgs).ConfigureAwait(false),
@@ -533,6 +536,48 @@ public static class Program
     }
 
 
+    private static int PrintLanguageProfiles(string[] args)
+    {
+        if (args.Length > 0)
+        {
+            Console.Error.WriteLine("Usage: stats language-profiles");
+            return 1;
+        }
+
+        IReadOnlyList<LanguageProfile> profiles = LanguageProfileProvider.ListProfiles();
+        Console.WriteLine("Language profiles");
+        Console.WriteLine();
+        Console.WriteLine("Code  Name      Family    Long  Very long  Stopwords  Apostrophe handling");
+        Console.WriteLine("----  --------  --------  ----  ---------  ---------  -------------------");
+        foreach (LanguageProfile profile in profiles)
+        {
+            Console.WriteLine($"{profile.Code,-4}  {TrimForColumn(profile.Name, 8),-8}  {TrimForColumn(profile.Family, 8),-8}  {profile.DefaultLongWordLength,4}  {profile.DefaultVeryLongWordLength,9}  {profile.StopWordCount,9}  {profile.ApostropheHandling}");
+        }
+
+        return 0;
+    }
+
+    private static int PrintLanguageProfile(string[] args)
+    {
+        if (args.Length == 0)
+        {
+            Console.Error.WriteLine("Usage: stats language-profile <languageCode>");
+            return 1;
+        }
+
+        LanguageProfile profile = LanguageProfileProvider.GetProfile(args[0]);
+        Console.WriteLine($"Language profile: {LanguageProfileLabel(profile)}");
+        Console.WriteLine($"Code:              {profile.Code}");
+        Console.WriteLine($"Known:             {(profile.IsKnown ? "yes" : "no")}");
+        Console.WriteLine($"Family:            {profile.Family}");
+        Console.WriteLine($"Long word length:  {profile.DefaultLongWordLength}");
+        Console.WriteLine($"Very long length:  {profile.DefaultVeryLongWordLength}");
+        Console.WriteLine($"Stopwords:         {profile.StopWordCount}");
+        Console.WriteLine($"Apostrophes:       {profile.ApostropheHandling}");
+        Console.WriteLine($"Tokenization:      {profile.TokenizationNotes}");
+        return 0;
+    }
+
     private static async Task<int> PrintDifficultyAsync(string[] args)
     {
         if (!TryReadRunId(args, out long analysisRunId))
@@ -542,12 +587,17 @@ public static class Program
         }
 
         CommandLineOptions options = CommandLineOptions.Parse(args.Skip(1).ToArray());
-        int longWordLength = Math.Max(2, TryReadIntOption(options, "long-word-length") ?? 7);
-        int veryLongWordLength = Math.Max(longWordLength, TryReadIntOption(options, "very-long-word-length") ?? 10);
         SqliteCorpusStore store = new(options.Get("db", DefaultDatabasePath()));
+        IReadOnlyList<string> languageCodes = await ReadRunLanguageCodesAsync(store, analysisRunId)
+            .ConfigureAwait(false);
+        LanguageProfile languageProfile = SelectDifficultyProfile(languageCodes);
+        DifficultyThresholds thresholds = ReadDifficultyThresholds(options, languageProfile);
 
         StoredDifficultyProfile? profile = await store
-            .GetDifficultyProfileAsync(analysisRunId, longWordLength, veryLongWordLength)
+            .GetDifficultyProfileAsync(
+                analysisRunId,
+                thresholds.LongWordLength,
+                thresholds.VeryLongWordLength)
             .ConfigureAwait(false);
 
         if (profile is null)
@@ -556,13 +606,11 @@ public static class Program
             return 1;
         }
 
-        IReadOnlyList<string> languageCodes = await ReadRunLanguageCodesAsync(store, analysisRunId)
-            .ConfigureAwait(false);
-
         Console.WriteLine($"Difficulty profile for run {analysisRunId}");
         Console.WriteLine($"Run: {profile.CorpusName} / {profile.BookTitle}");
         Console.WriteLine($"Language: {FormatLanguageCodes(languageCodes)}");
-        Console.WriteLine($"Thresholds: long words >= {longWordLength} chars; very long words >= {veryLongWordLength} chars");
+        Console.WriteLine($"Language profile: {LanguageProfileLabel(languageProfile)}");
+        Console.WriteLine($"Thresholds: long words >= {thresholds.LongWordLength} chars; very long words >= {thresholds.VeryLongWordLength} chars");
         Console.WriteLine("Score type: heuristic relative score; higher means more difficult within comparable corpora.");
         Console.WriteLine("Note: compare mainly runs in the same language or similar corpus type.");
         Console.WriteLine($"Heuristic score: {FormatDouble(profile.HeuristicScore)}");
@@ -596,8 +644,6 @@ public static class Program
         }
 
         CommandLineOptions options = CommandLineOptions.Parse(args.Skip(2).ToArray());
-        int longWordLength = Math.Max(2, TryReadIntOption(options, "long-word-length") ?? 7);
-        int veryLongWordLength = Math.Max(longWordLength, TryReadIntOption(options, "very-long-word-length") ?? 10);
         SqliteCorpusStore store = new(options.Get("db", DefaultDatabasePath()));
 
         StoredAnalysisRunSummary? leftRun = await store.GetAnalysisRunSummaryAsync(leftRunId).ConfigureAwait(false);
@@ -607,11 +653,16 @@ public static class Program
             return 1;
         }
 
+        string? leftLanguageCode = await ReadRunLanguageCodeAsync(store, leftRunId).ConfigureAwait(false);
+        string? rightLanguageCode = await ReadRunLanguageCodeAsync(store, rightRunId).ConfigureAwait(false);
+        LanguageProfile languageProfile = SelectComparisonDifficultyProfile(leftLanguageCode, rightLanguageCode);
+        DifficultyThresholds thresholds = ReadDifficultyThresholds(options, languageProfile);
+
         StoredDifficultyProfile? leftProfile = await store
-            .GetDifficultyProfileAsync(leftRunId, longWordLength, veryLongWordLength)
+            .GetDifficultyProfileAsync(leftRunId, thresholds.LongWordLength, thresholds.VeryLongWordLength)
             .ConfigureAwait(false);
         StoredDifficultyProfile? rightProfile = await store
-            .GetDifficultyProfileAsync(rightRunId, longWordLength, veryLongWordLength)
+            .GetDifficultyProfileAsync(rightRunId, thresholds.LongWordLength, thresholds.VeryLongWordLength)
             .ConfigureAwait(false);
 
         if (leftProfile is null || rightProfile is null)
@@ -620,13 +671,12 @@ public static class Program
             return 1;
         }
 
-        string? leftLanguageCode = await ReadRunLanguageCodeAsync(store, leftRunId).ConfigureAwait(false);
-        string? rightLanguageCode = await ReadRunLanguageCodeAsync(store, rightRunId).ConfigureAwait(false);
-
         Console.WriteLine($"Difficulty comparison between run {leftRunId} and run {rightRunId}");
         Console.WriteLine($"Left run:  {RunComparisonLabel(leftRun!)}");
         Console.WriteLine($"Right run: {RunComparisonLabel(rightRun!)}");
         WriteLanguageComparisonNote(leftLanguageCode, rightLanguageCode);
+        Console.WriteLine($"Language profile: {LanguageProfileLabel(languageProfile)}");
+        Console.WriteLine($"Thresholds: long words >= {thresholds.LongWordLength} chars; very long words >= {thresholds.VeryLongWordLength} chars");
         Console.WriteLine("Score type: heuristic relative score; compare mainly runs in the same language or similar corpus type.");
         Console.WriteLine();
         Console.WriteLine("Side   Score   Avg sent  Avg word  Long %  Very long %  Content %  LexDiv/1k");
@@ -1236,6 +1286,8 @@ public static class Program
         Console.WriteLine("  stats compare-words <leftRunId> <rightRunId> [--limit <n>] [--min-count <n>] [--shared-only|--exclusive-only] [--content-only|--function-only] [--db <file>]");
         Console.WriteLine("  stats difficulty <runId> [--long-word-length <n>] [--very-long-word-length <n>] [--db <file>]");
         Console.WriteLine("  stats compare-difficulty <leftRunId> <rightRunId> [--long-word-length <n>] [--very-long-word-length <n>] [--db <file>]");
+        Console.WriteLine("  stats language-profiles");
+        Console.WriteLine("  stats language-profile <languageCode>");
         Console.WriteLine("  stats collocations <runId> <word> [--window <n>] [--limit <n>] [--min-count <n>] [--min-dice <n>] [--content-only|--function-only] [--db <file>]");
         Console.WriteLine("  stats words <runId> [--limit <n>] [--content-only] [--function-only] [--db <file>]");
         Console.WriteLine("  stats word <runId> <word> [--limit <n>] [--db <file>]");
@@ -1273,6 +1325,8 @@ public static class Program
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats word-books 1 alice --limit 25");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats compare-word 1 2 love");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats compare-words 1 2 --content-only --shared-only --min-count 5 --limit 25");
+        Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats language-profiles");
+        Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats language-profile it");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats collocations 1 alice --window 4 --content-only --min-count 3 --limit 25");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats phrases 1 --min-n 2 --max-n 5 --min-count 3 --min-chapters 2 --content-boundary --longest-only --limit 25");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats words 1 --limit 25");
@@ -1609,6 +1663,52 @@ public static class Program
         IReadOnlyList<string> languageCodes)
     {
         return StopWordProvider.IsStopWord(collocation.Collocate, languageCodes);
+    }
+
+    private sealed record DifficultyThresholds(int LongWordLength, int VeryLongWordLength);
+
+    private static DifficultyThresholds ReadDifficultyThresholds(
+        CommandLineOptions options,
+        LanguageProfile languageProfile)
+    {
+        int longWordLength = Math.Max(
+            2,
+            TryReadIntOption(options, "long-word-length") ?? languageProfile.DefaultLongWordLength);
+        int veryLongWordLength = Math.Max(
+            longWordLength,
+            TryReadIntOption(options, "very-long-word-length") ?? languageProfile.DefaultVeryLongWordLength);
+
+        return new DifficultyThresholds(longWordLength, veryLongWordLength);
+    }
+
+    private static LanguageProfile SelectDifficultyProfile(IReadOnlyList<string> languageCodes)
+    {
+        string[] distinctCodes = languageCodes
+            .Where(code => !string.IsNullOrWhiteSpace(code))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return distinctCodes.Length == 1
+            ? LanguageProfileProvider.GetProfile(distinctCodes[0])
+            : LanguageProfileProvider.GetProfile("unknown");
+    }
+
+    private static LanguageProfile SelectComparisonDifficultyProfile(
+        string? leftLanguageCode,
+        string? rightLanguageCode)
+    {
+        if (!string.IsNullOrWhiteSpace(leftLanguageCode)
+            && string.Equals(leftLanguageCode, rightLanguageCode, StringComparison.OrdinalIgnoreCase))
+        {
+            return LanguageProfileProvider.GetProfile(leftLanguageCode);
+        }
+
+        return LanguageProfileProvider.GetProfile("unknown");
+    }
+
+    private static string LanguageProfileLabel(LanguageProfile profile)
+    {
+        return profile.IsKnown ? $"{profile.Name} ({profile.Code})" : $"generic defaults ({profile.Code})";
     }
 
     private static async Task<string?> ReadRunLanguageCodeAsync(
