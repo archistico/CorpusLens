@@ -48,6 +48,12 @@ public sealed partial class MainWindow : Window
         TextBlock reportPathText = CreateBoundText(viewModel, nameof(MainWindowViewModel.ReportPath), () => viewModel.ReportPath);
         reportPathText.TextWrapping = TextWrapping.Wrap;
 
+        TextBlock booksExplorerTitleText = CreateBoundText(viewModel, nameof(MainWindowViewModel.BooksExplorerTitle), () => viewModel.BooksExplorerTitle);
+        booksExplorerTitleText.FontSize = 18;
+        booksExplorerTitleText.FontWeight = FontWeight.SemiBold;
+        TextBlock booksExplorerSummaryText = CreateBoundText(viewModel, nameof(MainWindowViewModel.BooksExplorerSummary), () => viewModel.BooksExplorerSummary);
+        TextBlock runBookDetailsText = CreateBoundText(viewModel, nameof(MainWindowViewModel.RunBookDetails), () => viewModel.RunBookDetails);
+
         TextBlock wordExplorerTitleText = CreateBoundText(viewModel, nameof(MainWindowViewModel.WordExplorerTitle), () => viewModel.WordExplorerTitle);
         wordExplorerTitleText.FontSize = 18;
         wordExplorerTitleText.FontWeight = FontWeight.SemiBold;
@@ -127,6 +133,9 @@ public sealed partial class MainWindow : Window
                 tokenIndexText,
                 queryPathText,
                 reportPathText,
+                booksExplorerTitleText,
+                booksExplorerSummaryText,
+                runBookDetailsText,
                 wordExplorerTitleText,
                 wordExplorerSummaryText,
                 wordNextWordsText,
@@ -360,6 +369,9 @@ public sealed partial class MainWindow : Window
         TextBlock tokenIndexText,
         TextBlock queryPathText,
         TextBlock reportPathText,
+        TextBlock booksExplorerTitleText,
+        TextBlock booksExplorerSummaryText,
+        TextBlock runBookDetailsText,
         TextBlock wordExplorerTitleText,
         TextBlock wordExplorerSummaryText,
         TextBlock wordNextWordsText,
@@ -435,6 +447,11 @@ public sealed partial class MainWindow : Window
             },
         };
         stack.Children.Add(reportCard);
+        stack.Children.Add(BuildBooksExplorer(
+            viewModel,
+            booksExplorerTitleText,
+            booksExplorerSummaryText,
+            runBookDetailsText));
         stack.Children.Add(BuildWordExplorer(
             viewModel,
             wordExplorerTitleText,
@@ -469,6 +486,85 @@ public sealed partial class MainWindow : Window
             comparisonPresenceText));
 
         return stack;
+    }
+
+    private static Control BuildBooksExplorer(
+        MainWindowViewModel viewModel,
+        TextBlock titleText,
+        TextBlock summaryText,
+        TextBlock detailsText)
+    {
+        ListBox books = new()
+        {
+            ItemsSource = viewModel.RunBooks,
+            SelectedItem = viewModel.SelectedRunBook,
+            MinHeight = 180,
+            MaxHeight = 280,
+            IsEnabled = !viewModel.IsBusy,
+        };
+        books.SelectionChanged += (_, _) =>
+        {
+            if (!ReferenceEquals(books.SelectedItem, viewModel.SelectedRunBook))
+            {
+                viewModel.SetSelectedRunBook(books.SelectedItem as RunBookListItemViewModel);
+            }
+        };
+        viewModel.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(MainWindowViewModel.SelectedRunBook)
+                && !ReferenceEquals(books.SelectedItem, viewModel.SelectedRunBook))
+            {
+                books.SelectedItem = viewModel.SelectedRunBook;
+            }
+
+            if (args.PropertyName == nameof(MainWindowViewModel.IsBusy))
+            {
+                books.IsEnabled = !viewModel.IsBusy;
+            }
+        };
+
+        Border booksCard = new()
+        {
+            Padding = new Thickness(16),
+            BorderBrush = Brushes.LightGray,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Child = new StackPanel
+            {
+                Spacing = 8,
+                Children =
+                {
+                    new TextBlock { Text = "Source books", FontWeight = FontWeight.SemiBold },
+                    books,
+                },
+            },
+        };
+        Grid.SetColumn(booksCard, 0);
+
+        Grid content = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("2*,3*"),
+        };
+        content.Children.Add(booksCard);
+        content.Children.Add(BuildCard("Book details", detailsText, 1, monospace: true));
+
+        return new Border
+        {
+            Padding = new Thickness(16),
+            BorderBrush = Brushes.LightGray,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Child = new StackPanel
+            {
+                Spacing = 12,
+                Children =
+                {
+                    titleText,
+                    summaryText,
+                    content,
+                },
+            },
+        };
     }
 
     private static Control BuildWordExplorer(

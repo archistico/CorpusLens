@@ -4,6 +4,8 @@ CorpusLens is a small C#/.NET tool for building and exploring language corpora f
 
 It is CLI-first, testable, and stores analysis data in SQLite so that corpora can be queried after import.
 
+![Corpus Lens screenshot](screenshot-corpus-lens.png)
+
 ## Features
 
 - EPUB and plain-text analysis
@@ -28,7 +30,7 @@ It is CLI-first, testable, and stores analysis data in SQLite so that corpora ca
 
 ## Architecture note
 
-CorpusLens keeps analysis and storage logic outside the UI/CLI surfaces. Read-only orchestration for run lists, corpus profiles and health checks lives in `CorpusLens.Application/Queries`, so the CLI and the future Avalonia desktop app can share the same query services.
+CorpusLens keeps analysis and storage logic outside the UI/CLI surfaces. Read-only orchestration for run lists, source books, corpus profiles and health checks lives in `CorpusLens.Application/Queries`, so the CLI and the Avalonia desktop app share the same query services.
 
 ## Project layout
 
@@ -201,7 +203,7 @@ The Avalonia desktop project is available as an early shell:
 make desktop
 ```
 
-The desktop app can open an existing `corpuslens.db`, list runs, select a run, and show a compact dashboard with core metrics, language profile, difficulty summary, top content/function words, recurring phrases and token-index health. Database and dashboard loading run in the background and show a progress indicator so the UI stays responsive.
+The desktop app can open an existing `corpuslens.db`, list runs, select a run, browse its ordered source books, and show a compact dashboard with core metrics, language profile, difficulty summary, top content/function words, recurring phrases and token-index health. Database, dashboard and source-book loading run in the background and show a progress indicator so the UI stays responsive.
 
 ## Development
 
@@ -236,7 +238,7 @@ Run the Avalonia desktop shell with:
 make desktop
 ```
 
-The desktop UI can open an existing `corpuslens.db`, list analysis runs, show a run dashboard, search words, explore collocations, and explore recurring phrases.
+The desktop UI can open an existing `corpuslens.db`, list analysis runs, browse source books and their metadata, show a run dashboard, search words, explore collocations, explore recurring phrases, and compare runs.
 
 ### Desktop compare runs
 

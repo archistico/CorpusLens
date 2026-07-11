@@ -1347,3 +1347,7 @@ Adds a desktop phrase mining panel with min/max n, min count, min chapters, cont
 ## Milestone 18.7 — Compare runs explorer
 
 Desktop UI panel for comparing two runs: optional single-word comparison, top lexical differences, shared/exclusive filters, and relative difficulty comparison.
+
+## Milestone 18.8 — Books explorer
+
+Desktop source-books explorer for the selected run, with aggregate counts, ordered book list and metadata details. It reuses `AnalysisRunQueryService.ListRunBooksAsync`, including the existing fallback for legacy single-book runs.

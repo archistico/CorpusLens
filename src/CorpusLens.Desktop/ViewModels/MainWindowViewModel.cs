@@ -34,6 +34,10 @@ public sealed class MainWindowViewModel : ViewModelBase
     private string _tokenIndexSummary = "Token index status will appear here.";
     private string _queryPathSummary = "Query path will appear here.";
     private string _reportPath = "Report path will appear here.";
+    private string _booksExplorerTitle = "Books explorer";
+    private string _booksExplorerSummary = "Select a run to inspect its source books.";
+    private string _runBookDetails = "Book details will appear here.";
+    private RunBookListItemViewModel? _selectedRunBook;
     private string _wordExplorerTitle = "Word explorer";
     private string _wordExplorerSummary = "Select a run and search a word.";
     private string _wordNextWords = "Next words will appear here.";
@@ -69,6 +73,8 @@ public sealed class MainWindowViewModel : ViewModelBase
     }
 
     public ObservableCollection<RunListItemViewModel> Runs { get; } = new();
+
+    public ObservableCollection<RunBookListItemViewModel> RunBooks { get; } = new();
 
     public RunListItemViewModel? SelectedRun
     {
@@ -154,6 +160,29 @@ public sealed class MainWindowViewModel : ViewModelBase
         private set => SetProperty(ref _reportPath, value);
     }
 
+    public string BooksExplorerTitle
+    {
+        get => _booksExplorerTitle;
+        private set => SetProperty(ref _booksExplorerTitle, value);
+    }
+
+    public string BooksExplorerSummary
+    {
+        get => _booksExplorerSummary;
+        private set => SetProperty(ref _booksExplorerSummary, value);
+    }
+
+    public string RunBookDetails
+    {
+        get => _runBookDetails;
+        private set => SetProperty(ref _runBookDetails, value);
+    }
+
+    public RunBookListItemViewModel? SelectedRunBook
+    {
+        get => _selectedRunBook;
+        private set => SetProperty(ref _selectedRunBook, value);
+    }
 
     public string WordExplorerTitle
     {
@@ -471,6 +500,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         ReportPath = string.IsNullOrWhiteSpace(run.ReportPath)
             ? "Report: not available"
             : $"Report: {run.ReportPath}";
+        ClearRunBooksExplorer("Loading source books...");
         ClearWordExplorer("Search a word in the selected run.");
         ClearCollocationExplorer("Search collocations in the selected run.");
         ClearPhraseExplorer("Search phrases in the selected run.");
@@ -483,7 +513,77 @@ public sealed class MainWindowViewModel : ViewModelBase
         StatusMessage = $"Loading profile for run {run.Id}...";
         Task profileTask = LoadProfileAsync(run.Id, cancellationToken);
 
-        await Task.WhenAll(healthTask, profileTask).ConfigureAwait(true);
+        StatusMessage = $"Loading source books for run {run.Id}...";
+        Task booksTask = LoadRunBooksAsync(run.Id, cancellationToken);
+
+        await Task.WhenAll(healthTask, profileTask, booksTask).ConfigureAwait(true);
+    }
+
+    private async Task LoadRunBooksAsync(long runId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            string databasePath = DatabasePath;
+            IReadOnlyList<StoredAnalysisRunBook> books = await Task.Run(async () =>
+            {
+                AnalysisRunQueryService service = new(databasePath);
+                return await service.ListRunBooksAsync(runId, cancellationToken)
+                    .ConfigureAwait(false);
+            }, cancellationToken).ConfigureAwait(true);
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            RunBooks.Clear();
+            foreach (StoredAnalysisRunBook book in books)
+            {
+                RunBooks.Add(new RunBookListItemViewModel(book));
+            }
+
+            BooksExplorerTitle = $"Books — run {runId}";
+            if (RunBooks.Count == 0)
+            {
+                BooksExplorerSummary = "No source books are linked to this run.";
+                SetSelectedRunBook(null);
+                return;
+            }
+
+            long chapterCount = books.Sum(book => (long)book.ChapterCount);
+            long characterCount = books.Sum(book => (long)book.CharacterCount);
+            IReadOnlyList<string> languageCodes = books
+                .Select(book => book.LanguageCode)
+                .Where(code => !string.IsNullOrWhiteSpace(code))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(code => code, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            BooksExplorerSummary = string.Join(Environment.NewLine,
+                $"Source books: {books.Count:n0}",
+                $"Chapters: {chapterCount:n0}",
+                $"Characters: {characterCount:n0}",
+                $"Languages: {FormatLanguageCodes(languageCodes)}");
+            SetSelectedRunBook(RunBooks[0]);
+        }
+        catch (Exception ex)
+        {
+            ClearRunBooksExplorer($"Could not load source books: {ex.Message}");
+        }
+    }
+
+    public void SetSelectedRunBook(RunBookListItemViewModel? book)
+    {
+        SelectedRunBook = book;
+        RunBookDetails = book is null
+            ? "Select a source book to inspect its details."
+            : FormatRunBookDetails(book.Book);
+    }
+
+    private void ClearRunBooksExplorer(string message)
+    {
+        RunBooks.Clear();
+        SelectedRunBook = null;
+        BooksExplorerTitle = "Books explorer";
+        BooksExplorerSummary = message;
+        RunBookDetails = "Book details will appear here.";
     }
 
     private async Task LoadHealthAsync(long runId, CancellationToken cancellationToken)
@@ -1021,10 +1121,32 @@ public sealed class MainWindowViewModel : ViewModelBase
         TokenIndexSummary = "Token index status will appear here.";
         QueryPathSummary = "Query path will appear here.";
         ReportPath = "Report path will appear here.";
+        ClearRunBooksExplorer("Select a run to inspect its source books.");
         ClearWordExplorer("Select a run and search a word.");
         ClearCollocationExplorer("Select a run and search collocations.");
         ClearPhraseExplorer("Select a run and search phrases.");
         ClearComparisonExplorer("Select a left run before comparing corpora.");
+    }
+
+    private static string FormatRunBookDetails(StoredAnalysisRunBook book)
+    {
+        string author = string.IsNullOrWhiteSpace(book.Author) ? "Unknown" : book.Author;
+        string language = string.IsNullOrWhiteSpace(book.LanguageCode) ? "unknown" : book.LanguageCode;
+        string sourcePath = string.IsNullOrWhiteSpace(book.OriginalFilePath)
+            ? "not available"
+            : book.OriginalFilePath;
+        string fileHash = string.IsNullOrWhiteSpace(book.FileHash) ? "not available" : book.FileHash;
+
+        return string.Join(Environment.NewLine,
+            $"Title: {book.Title}",
+            $"Author: {author}",
+            $"Language: {language}",
+            $"Run order: {book.OrderIndex:n0}",
+            $"Book ID: {book.BookId:n0}",
+            $"Chapters: {book.ChapterCount:n0}",
+            $"Characters: {book.CharacterCount:n0}",
+            $"Source file: {sourcePath}",
+            $"File hash: {fileHash}");
     }
 
     private static string FormatCoreMetrics(StoredAnalysisRunSummary run)
