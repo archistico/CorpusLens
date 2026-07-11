@@ -11,6 +11,10 @@ public sealed class MainWindowViewModel : ViewModelBase
     private const int DashboardPhraseLimit = 10;
     private const int DashboardMinPhraseCount = 3;
     private const int DashboardMinPhraseChapters = 2;
+    private const int WordExplorerRelatedWordLimit = 10;
+    private const int WordExplorerContextLimit = 10;
+    private const int WordExplorerContextWords = 8;
+    private const int WordExplorerBookLimit = 10;
 
     private string _databasePath = "No database selected";
     private string _statusMessage = "Ready";
@@ -27,6 +31,12 @@ public sealed class MainWindowViewModel : ViewModelBase
     private string _tokenIndexSummary = "Token index status will appear here.";
     private string _queryPathSummary = "Query path will appear here.";
     private string _reportPath = "Report path will appear here.";
+    private string _wordExplorerTitle = "Word explorer";
+    private string _wordExplorerSummary = "Select a run and search a word.";
+    private string _wordNextWords = "Next words will appear here.";
+    private string _wordPreviousWords = "Previous words will appear here.";
+    private string _wordKwic = "KWIC contexts will appear here.";
+    private string _wordBookDistribution = "Book distribution will appear here.";
 
     public string DatabasePath
     {
@@ -118,6 +128,43 @@ public sealed class MainWindowViewModel : ViewModelBase
     {
         get => _reportPath;
         private set => SetProperty(ref _reportPath, value);
+    }
+
+
+    public string WordExplorerTitle
+    {
+        get => _wordExplorerTitle;
+        private set => SetProperty(ref _wordExplorerTitle, value);
+    }
+
+    public string WordExplorerSummary
+    {
+        get => _wordExplorerSummary;
+        private set => SetProperty(ref _wordExplorerSummary, value);
+    }
+
+    public string WordNextWords
+    {
+        get => _wordNextWords;
+        private set => SetProperty(ref _wordNextWords, value);
+    }
+
+    public string WordPreviousWords
+    {
+        get => _wordPreviousWords;
+        private set => SetProperty(ref _wordPreviousWords, value);
+    }
+
+    public string WordKwic
+    {
+        get => _wordKwic;
+        private set => SetProperty(ref _wordKwic, value);
+    }
+
+    public string WordBookDistribution
+    {
+        get => _wordBookDistribution;
+        private set => SetProperty(ref _wordBookDistribution, value);
     }
 
     private void BeginBusy(string message)
@@ -248,6 +295,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         ReportPath = string.IsNullOrWhiteSpace(run.ReportPath)
             ? "Report: not available"
             : $"Report: {run.ReportPath}";
+        ClearWordExplorer("Search a word in the selected run.");
 
         StatusMessage = $"Loading health for run {run.Id}...";
         Task healthTask = LoadHealthAsync(run.Id, cancellationToken);
@@ -332,6 +380,102 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
     }
 
+
+    public async Task SearchWordAsync(string? wordText, CancellationToken cancellationToken = default)
+    {
+        string normalizedInput = wordText?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(normalizedInput))
+        {
+            ClearWordExplorer("Enter a word to search in the selected run.");
+            StatusMessage = "Enter a word to search.";
+            return;
+        }
+
+        if (SelectedRun is null)
+        {
+            ClearWordExplorer("Select a run before searching a word.");
+            StatusMessage = "Select a run before searching a word.";
+            return;
+        }
+
+        try
+        {
+            BeginBusy($"Searching '{normalizedInput}' in run {SelectedRun.Id}...");
+            string databasePath = DatabasePath;
+            long runId = SelectedRun.Id;
+
+            WordExplorerResult result = await Task.Run(async () =>
+            {
+                WordExplorerQueryService service = new();
+                return await service.GetWordExplorerAsync(new WordExplorerRequest(
+                        databasePath,
+                        runId,
+                        normalizedInput,
+                        WordExplorerRelatedWordLimit,
+                        WordExplorerContextLimit,
+                        WordExplorerContextWords,
+                        WordExplorerBookLimit),
+                    cancellationToken)
+                    .ConfigureAwait(false);
+            }, cancellationToken).ConfigureAwait(true);
+
+            cancellationToken.ThrowIfCancellationRequested();
+            ApplyWordExplorerResult(normalizedInput, result);
+            StatusMessage = result.Word is null
+                ? $"Word '{normalizedInput}' was not found in run {runId}."
+                : $"Word '{result.Word.Word}' loaded.";
+        }
+        catch (OperationCanceledException)
+        {
+            StatusMessage = "Word search cancelled.";
+        }
+        catch (Exception ex)
+        {
+            ClearWordExplorer($"Word search error: {ex.Message}");
+            StatusMessage = $"Error searching word: {ex.Message}";
+        }
+        finally
+        {
+            EndBusy();
+        }
+    }
+
+    private void ApplyWordExplorerResult(string requestedWord, WordExplorerResult result)
+    {
+        if (result.Word is null)
+        {
+            WordExplorerTitle = $"Word explorer — {requestedWord}";
+            WordExplorerSummary = "Word not found in the selected run.";
+            WordNextWords = "No next words.";
+            WordPreviousWords = "No previous words.";
+            WordKwic = "No KWIC contexts.";
+            WordBookDistribution = "No book distribution.";
+            return;
+        }
+
+        StoredWordStatistic word = result.Word;
+        WordExplorerTitle = $"Word explorer — {word.Word}";
+        WordExplorerSummary = string.Join(Environment.NewLine,
+            $"Type: {WordTypeLabel(word)}",
+            $"Count: {word.Count:n0}",
+            $"Documents: {word.DocumentCount:n0}",
+            $"Per million: {FormatDouble(word.FrequencyPerMillion)}");
+        WordNextWords = FormatNextWords(result.NextWords, useNextWord: true);
+        WordPreviousWords = FormatNextWords(result.PreviousWords, useNextWord: false);
+        WordKwic = FormatKwic(result.Contexts);
+        WordBookDistribution = FormatBookDistribution(result.BookDistribution);
+    }
+
+    private void ClearWordExplorer(string message)
+    {
+        WordExplorerTitle = "Word explorer";
+        WordExplorerSummary = message;
+        WordNextWords = "Next words will appear here.";
+        WordPreviousWords = "Previous words will appear here.";
+        WordKwic = "KWIC contexts will appear here.";
+        WordBookDistribution = "Book distribution will appear here.";
+    }
+
     private void ClearSelectedRun(string message)
     {
         SelectedRun = null;
@@ -346,6 +490,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         TokenIndexSummary = "Token index status will appear here.";
         QueryPathSummary = "Query path will appear here.";
         ReportPath = "Report path will appear here.";
+        ClearWordExplorer("Select a run and search a word.");
     }
 
     private static string FormatCoreMetrics(StoredAnalysisRunSummary run)
@@ -438,6 +583,61 @@ public sealed class MainWindowViewModel : ViewModelBase
             $"Collocations: {(contextIndex ? "token index" : "legacy fallback")}",
             $"Phrases: {(contextIndex ? "token index" : "legacy fallback")}",
             $"Word-books: {(wordBooksIndex ? "token index" : "legacy fallback")}");
+    }
+
+
+    private static string FormatNextWords(IReadOnlyList<StoredNextWordStatistic> words, bool useNextWord)
+    {
+        if (words.Count == 0)
+        {
+            return useNextWord ? "No next-word statistics found." : "No previous-word statistics found.";
+        }
+
+        IEnumerable<string> lines = words.Select((item, index) =>
+        {
+            string value = useNextWord ? item.NextWord : item.Word;
+            return $"{index + 1,2}. {TrimForColumn(value, 18),-18} {item.Count,6:n0}  {FormatProbability(item.Probability),7}";
+        });
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    private static string FormatKwic(IReadOnlyList<StoredWordContext> contexts)
+    {
+        if (contexts.Count == 0)
+        {
+            return "No contexts found.";
+        }
+
+        IEnumerable<string> lines = contexts.Select((context, index) =>
+        {
+            string chapter = string.IsNullOrWhiteSpace(context.ChapterTitle)
+                ? $"Chapter {context.ChapterOrderIndex}"
+                : context.ChapterTitle;
+            return $"{index + 1,2}. {TrimForColumn(chapter, 24),-24}  {TrimForColumn(context.LeftContext, 28),-28}  [{context.MatchText}]  {TrimForColumn(context.RightContext, 28)}";
+        });
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    private static string FormatBookDistribution(IReadOnlyList<StoredWordBookStatistic> books)
+    {
+        if (books.Count == 0)
+        {
+            return "No matching source books found.";
+        }
+
+        IEnumerable<string> lines = books.Select((book, index) =>
+            $"{index + 1,2}. {TrimForColumn(book.Title, 24),-24} {book.Count,6:n0}  {FormatDouble(book.FrequencyPerMillion),8}/M");
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    private static string WordTypeLabel(StoredWordStatistic word)
+    {
+        return word.IsStopWord ? "function" : "content";
+    }
+
+    private static string FormatProbability(double value)
+    {
+        return value.ToString("P2");
     }
 
     private static string FormatLanguageCodes(IReadOnlyList<string> languageCodes)

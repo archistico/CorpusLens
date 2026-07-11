@@ -1330,3 +1330,7 @@ Extended the Avalonia desktop app with a compact run dashboard. Selecting a run 
 - Run dashboard health/profile loading runs off the UI thread.
 - Status bar progress indicator added.
 - Open/Refresh/run selection are disabled while loading.
+
+## Milestone 18.4 — Word explorer
+
+Desktop word search panel with summary, next/previous words, KWIC contexts and book distribution.

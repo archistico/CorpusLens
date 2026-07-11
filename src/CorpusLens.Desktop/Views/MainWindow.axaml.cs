@@ -47,6 +47,15 @@ public sealed partial class MainWindow : Window
         TextBlock reportPathText = CreateBoundText(viewModel, nameof(MainWindowViewModel.ReportPath), () => viewModel.ReportPath);
         reportPathText.TextWrapping = TextWrapping.Wrap;
 
+        TextBlock wordExplorerTitleText = CreateBoundText(viewModel, nameof(MainWindowViewModel.WordExplorerTitle), () => viewModel.WordExplorerTitle);
+        wordExplorerTitleText.FontSize = 18;
+        wordExplorerTitleText.FontWeight = FontWeight.SemiBold;
+        TextBlock wordExplorerSummaryText = CreateBoundText(viewModel, nameof(MainWindowViewModel.WordExplorerSummary), () => viewModel.WordExplorerSummary);
+        TextBlock wordNextWordsText = CreateBoundText(viewModel, nameof(MainWindowViewModel.WordNextWords), () => viewModel.WordNextWords);
+        TextBlock wordPreviousWordsText = CreateBoundText(viewModel, nameof(MainWindowViewModel.WordPreviousWords), () => viewModel.WordPreviousWords);
+        TextBlock wordKwicText = CreateBoundText(viewModel, nameof(MainWindowViewModel.WordKwic), () => viewModel.WordKwic);
+        TextBlock wordBookDistributionText = CreateBoundText(viewModel, nameof(MainWindowViewModel.WordBookDistribution), () => viewModel.WordBookDistribution);
+
         Grid root = new()
         {
             RowDefinitions = new RowDefinitions("Auto,*,Auto"),
@@ -92,7 +101,14 @@ public sealed partial class MainWindow : Window
                 phrasesText,
                 tokenIndexText,
                 queryPathText,
-                reportPathText),
+                reportPathText,
+                wordExplorerTitleText,
+                wordExplorerSummaryText,
+                wordNextWordsText,
+                wordPreviousWordsText,
+                wordKwicText,
+                wordBookDistributionText,
+                viewModel),
         };
         Grid.SetColumn(mainArea, 1);
         body.Children.Add(mainArea);
@@ -303,7 +319,14 @@ public sealed partial class MainWindow : Window
         TextBlock phrasesText,
         TextBlock tokenIndexText,
         TextBlock queryPathText,
-        TextBlock reportPathText)
+        TextBlock reportPathText,
+        TextBlock wordExplorerTitleText,
+        TextBlock wordExplorerSummaryText,
+        TextBlock wordNextWordsText,
+        TextBlock wordPreviousWordsText,
+        TextBlock wordKwicText,
+        TextBlock wordBookDistributionText,
+        MainWindowViewModel viewModel)
     {
         StackPanel stack = new()
         {
@@ -357,8 +380,94 @@ public sealed partial class MainWindow : Window
             },
         };
         stack.Children.Add(reportCard);
+        stack.Children.Add(BuildWordExplorer(
+            viewModel,
+            wordExplorerTitleText,
+            wordExplorerSummaryText,
+            wordNextWordsText,
+            wordPreviousWordsText,
+            wordKwicText,
+            wordBookDistributionText));
 
         return stack;
+    }
+
+    private static Control BuildWordExplorer(
+        MainWindowViewModel viewModel,
+        TextBlock titleText,
+        TextBlock summaryText,
+        TextBlock nextWordsText,
+        TextBlock previousWordsText,
+        TextBlock kwicText,
+        TextBlock bookDistributionText)
+    {
+        TextBox wordBox = new()
+        {
+            PlaceholderText = "word, e.g. piazza",
+            MinWidth = 240,
+        };
+
+        Button searchButton = new()
+        {
+            Content = "Search word",
+            Margin = new Thickness(12, 0, 0, 0),
+        };
+        searchButton.Click += async (_, _) => await viewModel.SearchWordAsync(wordBox.Text).ConfigureAwait(true);
+        wordBox.KeyDown += async (_, args) =>
+        {
+            if (args.Key == Avalonia.Input.Key.Enter)
+            {
+                await viewModel.SearchWordAsync(wordBox.Text).ConfigureAwait(true);
+            }
+        };
+        DisableWhileBusy(searchButton, viewModel);
+
+        StackPanel searchRow = new()
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 0,
+            Children =
+            {
+                wordBox,
+                searchButton,
+            },
+        };
+
+        Grid relatedCards = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,*"),
+        };
+        relatedCards.Children.Add(BuildCard("Next words", nextWordsText, 0, monospace: true));
+        relatedCards.Children.Add(BuildCard("Previous words", previousWordsText, 1, monospace: true));
+
+        Grid detailCards = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("2*,*"),
+        };
+        detailCards.Children.Add(BuildCard("KWIC", kwicText, 0, monospace: true));
+        detailCards.Children.Add(BuildCard("Books", bookDistributionText, 1, monospace: true));
+
+        Border panel = new()
+        {
+            Padding = new Thickness(16),
+            BorderBrush = Brushes.LightGray,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Child = new StackPanel
+            {
+                Spacing = 12,
+                Children =
+                {
+                    titleText,
+                    searchRow,
+                    summaryText,
+                    relatedCards,
+                    detailCards,
+                },
+            },
+        };
+
+        return panel;
     }
 
     private static Control BuildCard(string title, TextBlock body, int column, bool monospace = false)

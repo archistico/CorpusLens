@@ -222,3 +222,7 @@ make check
 - `docs/technical-design.md`
 - `docs/analysis-rules.md`
 - `docs/roadmap.md`
+
+### Desktop word explorer
+
+The Avalonia desktop app can search a word in the selected run and show word summary, next/previous words, KWIC contexts and source-book distribution.
