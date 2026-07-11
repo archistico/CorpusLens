@@ -1280,3 +1280,8 @@ Added `stats profile <runId>` and `make stats-profile` as a compact run validati
 ## Milestone 17.1 — Token index schema + save
 
 Added persistent `TokenOccurrence` storage and `stats token-index <runId>` for validation. Existing KWIC, collocation, phrase and word-book queries still use the proven chapter-text paths; later milestones can migrate them one at a time.
+
+
+## Milestone 17.2 — KWIC da token index
+
+`stats kwic` now uses `TokenOccurrence` when a run has a token index, with automatic fallback to the previous chapter-text implementation for legacy runs. Output remains unchanged; only the occurrence lookup path changed.

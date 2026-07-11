@@ -1265,6 +1265,20 @@ public sealed class SqliteCorpusStore
         int safeLimit = NormalizeLimit(limit);
         int safeContextWords = Math.Clamp(contextWords, 1, 30);
         string normalizedWord = NormalizeContextWord(word);
+
+        StoredTokenIndexSummary? tokenIndexSummary = await GetTokenIndexSummaryAsync(analysisRunId, cancellationToken)
+            .ConfigureAwait(false);
+        if (tokenIndexSummary is { TokenCount: > 0 })
+        {
+            return await ListWordContextsFromTokenIndexAsync(
+                    analysisRunId,
+                    normalizedWord,
+                    safeLimit,
+                    safeContextWords,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         IReadOnlyList<StoredChapter> chapters = await ListChaptersAsync(run.BookId, cancellationToken)
             .ConfigureAwait(false);
 
@@ -1289,6 +1303,151 @@ public sealed class SqliteCorpusStore
         }
 
         return contexts;
+    }
+
+    private async Task<IReadOnlyList<StoredWordContext>> ListWordContextsFromTokenIndexAsync(
+        long analysisRunId,
+        string normalizedWord,
+        int limit,
+        int contextWords,
+        CancellationToken cancellationToken)
+    {
+        List<TokenContextTarget> targets = new();
+
+        await using SqliteConnection connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await EnableForeignKeysAsync(connection, cancellationToken).ConfigureAwait(false);
+
+        await using (SqliteCommand command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                SELECT
+                    t.AnalysisRunId,
+                    t.BookId,
+                    t.ChapterId,
+                    t.ChapterOrderIndex,
+                    ch.Title,
+                    ch.CleanText,
+                    t.TokenText,
+                    t.StartOffset,
+                    t.EndOffset,
+                    t.ChapterPosition
+                FROM TokenOccurrence t
+                INNER JOIN Chapter ch ON ch.Id = t.ChapterId
+                WHERE t.AnalysisRunId = $analysisRunId
+                  AND t.NormalizedToken = $normalizedWord
+                ORDER BY t.RunPosition
+                LIMIT $limit;
+                """;
+            AddParameter(command, "$analysisRunId", analysisRunId);
+            AddParameter(command, "$normalizedWord", normalizedWord);
+            AddParameter(command, "$limit", limit);
+
+            await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                targets.Add(new TokenContextTarget(
+                    reader.GetInt64(0),
+                    reader.GetInt64(1),
+                    reader.GetInt64(2),
+                    reader.GetInt32(3),
+                    reader.GetString(4),
+                    reader.GetString(5),
+                    reader.GetString(6),
+                    reader.GetInt32(7),
+                    reader.GetInt32(8),
+                    reader.GetInt32(9)));
+            }
+        }
+
+        if (targets.Count == 0)
+        {
+            return Array.Empty<StoredWordContext>();
+        }
+
+        List<StoredWordContext> contexts = new(targets.Count);
+        Dictionary<long, int> occurrenceIndexByChapter = new();
+        foreach (TokenContextTarget target in targets)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            int occurrenceIndex = occurrenceIndexByChapter.TryGetValue(target.ChapterId, out int currentIndex)
+                ? currentIndex + 1
+                : 1;
+            occurrenceIndexByChapter[target.ChapterId] = occurrenceIndex;
+
+            IReadOnlyList<TokenContextWindowToken> windowTokens = await ListTokenContextWindowAsync(
+                    connection,
+                    analysisRunId,
+                    target.ChapterId,
+                    Math.Max(1, target.ChapterPosition - contextWords),
+                    target.ChapterPosition + contextWords,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            TokenContextWindowToken? firstLeftToken = windowTokens
+                .Where(token => token.ChapterPosition < target.ChapterPosition)
+                .MinBy(token => token.ChapterPosition);
+            TokenContextWindowToken? lastRightToken = windowTokens
+                .Where(token => token.ChapterPosition > target.ChapterPosition)
+                .MaxBy(token => token.ChapterPosition);
+
+            string leftContext = firstLeftToken is null
+                ? string.Empty
+                : NormalizeLeftContextSnippet(target.CleanText[firstLeftToken.StartOffset..target.StartOffset]);
+            string rightContext = lastRightToken is null
+                ? string.Empty
+                : NormalizeRightContextSnippet(target.CleanText[target.EndOffset..lastRightToken.EndOffset]);
+
+            contexts.Add(new StoredWordContext(
+                target.AnalysisRunId,
+                target.BookId,
+                target.ChapterId,
+                target.ChapterOrderIndex,
+                target.ChapterTitle,
+                target.TokenText,
+                leftContext,
+                rightContext,
+                occurrenceIndex,
+                target.StartOffset));
+        }
+
+        return contexts;
+    }
+
+    private static async Task<IReadOnlyList<TokenContextWindowToken>> ListTokenContextWindowAsync(
+        SqliteConnection connection,
+        long analysisRunId,
+        long chapterId,
+        int startChapterPosition,
+        int endChapterPosition,
+        CancellationToken cancellationToken)
+    {
+        List<TokenContextWindowToken> tokens = new();
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT ChapterPosition, StartOffset, EndOffset
+            FROM TokenOccurrence
+            WHERE AnalysisRunId = $analysisRunId
+              AND ChapterId = $chapterId
+              AND ChapterPosition BETWEEN $startChapterPosition AND $endChapterPosition
+            ORDER BY ChapterPosition;
+            """;
+        AddParameter(command, "$analysisRunId", analysisRunId);
+        AddParameter(command, "$chapterId", chapterId);
+        AddParameter(command, "$startChapterPosition", startChapterPosition);
+        AddParameter(command, "$endChapterPosition", endChapterPosition);
+
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            tokens.Add(new TokenContextWindowToken(
+                reader.GetInt32(0),
+                reader.GetInt32(1),
+                reader.GetInt32(2)));
+        }
+
+        return tokens;
     }
 
 
@@ -2131,6 +2290,23 @@ public sealed class SqliteCorpusStore
         int EndOffset,
         string Text,
         string NormalizedText);
+
+    private sealed record TokenContextTarget(
+        long AnalysisRunId,
+        long BookId,
+        long ChapterId,
+        int ChapterOrderIndex,
+        string ChapterTitle,
+        string CleanText,
+        string TokenText,
+        int StartOffset,
+        int EndOffset,
+        int ChapterPosition);
+
+    private sealed record TokenContextWindowToken(
+        int ChapterPosition,
+        int StartOffset,
+        int EndOffset);
 
 
 

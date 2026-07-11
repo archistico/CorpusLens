@@ -2,6 +2,7 @@ using CorpusLens.Domain.Analysis;
 using CorpusLens.Domain.Books;
 using CorpusLens.Domain.Storage;
 using CorpusLens.Infrastructure.Storage;
+using Microsoft.Data.Sqlite;
 using Xunit;
 
 namespace CorpusLens.Infrastructure.Tests;
@@ -257,6 +258,98 @@ public sealed class SqliteCorpusStoreTests
         });
         Assert.Equal(2, aliceOccurrences[0].ChapterPosition);
         Assert.Equal(6, aliceOccurrences[1].ChapterPosition);
+    }
+
+
+    [Fact]
+    public async Task ListWordContextsAsync_ShouldUseTokenIndexWhenAvailable()
+    {
+        using TestDatabase database = new();
+        string sourceFile = database.CreateSourceFile("alice.epub", "fake epub content");
+        SqliteCorpusStore store = new(database.Path);
+        StoredCorpus corpus = await store.CreateCorpusAsync("English Literature", "en");
+
+        ImportedBook book = new(
+            "book-1",
+            "Alice",
+            "Lewis Carroll",
+            "en",
+            sourceFile,
+            new[]
+            {
+                new ImportedChapter(1, "Chapter I", "chapter1.xhtml", string.Empty, "Hello, Alice. Rabbit saw Alice.")
+            });
+
+        StoredBookImport storedImport = await store.SaveImportedBookAsync(corpus.Id, book);
+        CorpusAnalysisResult analysis = new(
+            new CorpusSummary(1, 2, 8, 5, 4, 2.5, 4.0),
+            Array.Empty<WordFrequency>(),
+            Array.Empty<NGramFrequency>(),
+            Array.Empty<NextWordFrequency>(),
+            Array.Empty<AnalyzedSentence>());
+
+        StoredAnalysisRun run = await store.SaveAnalysisRunAsync(
+            corpus.Id,
+            storedImport.Book.Id,
+            new AnalysisSettings(),
+            analysis,
+            "report.md",
+            "words.csv",
+            "ngrams.csv",
+            "next_words.csv",
+            "extracted_text.txt");
+
+        await DeleteTokenOccurrencesAsync(database.Path, "alice");
+
+        IReadOnlyList<StoredWordContext> contexts = await store.ListWordContextsAsync(run.Id, "alice", limit: 3, contextWords: 2);
+
+        Assert.Empty(contexts);
+    }
+
+    [Fact]
+    public async Task ListWordContextsAsync_ShouldFallBackToStoredChaptersWhenTokenIndexIsMissing()
+    {
+        using TestDatabase database = new();
+        string sourceFile = database.CreateSourceFile("alice.epub", "fake epub content");
+        SqliteCorpusStore store = new(database.Path);
+        StoredCorpus corpus = await store.CreateCorpusAsync("English Literature", "en");
+
+        ImportedBook book = new(
+            "book-1",
+            "Alice",
+            "Lewis Carroll",
+            "en",
+            sourceFile,
+            new[]
+            {
+                new ImportedChapter(1, "Chapter I", "chapter1.xhtml", string.Empty, "Hello, Alice. Rabbit saw Alice.")
+            });
+
+        StoredBookImport storedImport = await store.SaveImportedBookAsync(corpus.Id, book);
+        CorpusAnalysisResult analysis = new(
+            new CorpusSummary(1, 2, 8, 5, 4, 2.5, 4.0),
+            Array.Empty<WordFrequency>(),
+            Array.Empty<NGramFrequency>(),
+            Array.Empty<NextWordFrequency>(),
+            Array.Empty<AnalyzedSentence>());
+
+        StoredAnalysisRun run = await store.SaveAnalysisRunAsync(
+            corpus.Id,
+            storedImport.Book.Id,
+            new AnalysisSettings(),
+            analysis,
+            "report.md",
+            "words.csv",
+            "ngrams.csv",
+            "next_words.csv",
+            "extracted_text.txt");
+
+        await DeleteAllTokenOccurrencesAsync(database.Path);
+
+        IReadOnlyList<StoredWordContext> contexts = await store.ListWordContextsAsync(run.Id, "alice", limit: 3, contextWords: 2);
+
+        Assert.Equal(2, contexts.Count);
+        Assert.All(contexts, context => Assert.Equal("Alice", context.MatchText));
     }
 
 
@@ -900,6 +993,28 @@ public sealed class SqliteCorpusStoreTests
         Assert.Equal(0.3, profile.VeryLongWordShare, precision: 6);
         Assert.Equal(400.0, profile.LexicalDiversityPerThousand, precision: 6);
         Assert.True(profile.HeuristicScore > 0);
+    }
+
+
+    private static async Task DeleteTokenOccurrencesAsync(string databasePath, string normalizedToken)
+    {
+        await using SqliteConnection connection = new($"Data Source={databasePath};Pooling=False");
+        await connection.OpenAsync();
+
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM TokenOccurrence WHERE NormalizedToken = $normalizedToken;";
+        command.Parameters.AddWithValue("$normalizedToken", normalizedToken);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task DeleteAllTokenOccurrencesAsync(string databasePath)
+    {
+        await using SqliteConnection connection = new($"Data Source={databasePath};Pooling=False");
+        await connection.OpenAsync();
+
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM TokenOccurrence;";
+        await command.ExecuteNonQueryAsync();
     }
 
 

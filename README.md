@@ -102,7 +102,7 @@ Token index:
 make stats-token-index RUN=1
 ```
 
-The token index is saved when an analysis run is persisted to SQLite. Current query commands still use the existing proven paths; the index is available for validation and future query migration.
+The token index is saved when an analysis run is persisted to SQLite. KWIC uses it when available and falls back to the chapter-text path for legacy runs. Other query migrations will be done incrementally.
 
 Compare runs:
 
