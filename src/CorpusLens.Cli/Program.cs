@@ -2,6 +2,7 @@ using System.Globalization;
 using CorpusLens.Analysis.Language;
 using CorpusLens.Analysis.StopWords;
 using CorpusLens.Application.EpubAnalysis;
+using CorpusLens.Application.Queries;
 using CorpusLens.Application.Storage;
 using CorpusLens.Application.TextAnalysis;
 using CorpusLens.Domain.Analysis;
@@ -276,10 +277,10 @@ public static class Program
     private static async Task<int> PrintAnalysisRunsAsync(string[] args)
     {
         CommandLineOptions options = CommandLineOptions.Parse(args);
-        SqliteCorpusStore store = new(options.Get("db", DefaultDatabasePath()));
+        AnalysisRunQueryService service = new(options.Get("db", DefaultDatabasePath()));
         long? corpusId = TryReadLongOption(options, "corpus-id");
-        IReadOnlyList<StoredAnalysisRunSummary> runs = await store
-            .ListAnalysisRunsAsync(corpusId, ReadLimit(options))
+        IReadOnlyList<StoredAnalysisRunSummary> runs = await service
+            .ListRunsAsync(corpusId, ReadLimit(options))
             .ConfigureAwait(false);
 
         Console.WriteLine("Run  Corpus               Book/Source                       Started              Words      Sentences  Status");
@@ -306,9 +307,9 @@ public static class Program
         }
 
         CommandLineOptions options = CommandLineOptions.Parse(args.Skip(1).ToArray());
-        SqliteCorpusStore store = new(options.Get("db", DefaultDatabasePath()));
-        StoredAnalysisRunSummary? run = await store
-            .GetAnalysisRunSummaryAsync(analysisRunId)
+        AnalysisRunQueryService service = new(options.Get("db", DefaultDatabasePath()));
+        StoredAnalysisRunSummary? run = await service
+            .GetRunSummaryAsync(analysisRunId)
             .ConfigureAwait(false);
 
         if (run is null)
@@ -331,8 +332,8 @@ public static class Program
         Console.WriteLine($"Avg chars per word:       {FormatDouble(run.AverageCharactersPerWord)}");
         Console.WriteLine($"Report:                   {run.ReportPath}");
 
-        IReadOnlyList<StoredAnalysisRunBook> runBooks = await store
-            .ListAnalysisRunBooksAsync(analysisRunId)
+        IReadOnlyList<StoredAnalysisRunBook> runBooks = await service
+            .ListRunBooksAsync(analysisRunId)
             .ConfigureAwait(false);
         if (runBooks.Count > 0)
         {
@@ -351,58 +352,42 @@ public static class Program
         }
 
         CommandLineOptions options = CommandLineOptions.Parse(args.Skip(1).ToArray());
-        SqliteCorpusStore store = new(options.Get("db", DefaultDatabasePath()));
+        string databasePath = options.Get("db", DefaultDatabasePath());
         int wordLimit = Math.Max(1, ReadLimit(options));
         int phraseLimit = Math.Max(1, TryReadIntOption(options, "phrase-limit") ?? wordLimit);
         int minPhraseCount = Math.Max(1, TryReadIntOption(options, "min-phrase-count") ?? 3);
         int minPhraseChapters = Math.Max(1, TryReadIntOption(options, "min-phrase-chapters") ?? 2);
 
-        StoredAnalysisRunSummary? run = await store
-            .GetAnalysisRunSummaryAsync(analysisRunId)
+        CorpusProfileQueryService service = new();
+        CorpusProfileResult? profile = await service
+            .GetProfileAsync(new CorpusProfileRequest(
+                databasePath,
+                analysisRunId,
+                wordLimit,
+                phraseLimit,
+                minPhraseCount,
+                minPhraseChapters,
+                TryReadIntOption(options, "long-word-length"),
+                TryReadIntOption(options, "very-long-word-length")))
             .ConfigureAwait(false);
 
-        if (run is null)
+        if (profile is null)
         {
             Console.Error.WriteLine($"Analysis run {analysisRunId} was not found.");
             return 1;
         }
 
-        IReadOnlyList<StoredAnalysisRunBook> sourceBooks = await store
-            .ListAnalysisRunBooksAsync(analysisRunId)
-            .ConfigureAwait(false);
-        IReadOnlyList<string> languageCodes = await ReadRunLanguageCodesAsync(store, analysisRunId)
-            .ConfigureAwait(false);
-        LanguageProfile languageProfile = SelectDifficultyProfile(languageCodes);
-        DifficultyThresholds thresholds = ReadDifficultyThresholds(options, languageProfile);
-        StoredDifficultyProfile? difficultyProfile = await store
-            .GetDifficultyProfileAsync(analysisRunId, thresholds.LongWordLength, thresholds.VeryLongWordLength)
-            .ConfigureAwait(false);
-
-        IReadOnlyList<StoredWordStatistic> contentWords = await store
-            .ListTopWordsAsync(analysisRunId, wordLimit, StoredWordFilter.ContentOnly)
-            .ConfigureAwait(false);
-        IReadOnlyList<StoredWordStatistic> functionWords = await store
-            .ListTopWordsAsync(analysisRunId, wordLimit, StoredWordFilter.FunctionOnly)
-            .ConfigureAwait(false);
-
-        int phraseFetchLimit = Math.Min(Math.Max(phraseLimit * 40, 500), 10_000);
-        IReadOnlyList<StoredPhraseStatistic> candidatePhrases = await store
-            .ListPhrasesAsync(analysisRunId, minN: 2, maxN: 5, minCount: minPhraseCount, limit: phraseFetchLimit)
-            .ConfigureAwait(false);
-        IReadOnlyList<StoredPhraseStatistic> phrases = KeepLongestOnlyPhrases(candidatePhrases
-                .Where(phrase => phrase.ChapterCount >= minPhraseChapters)
-                .Where(phrase => HasContentWordBoundary(phrase.Phrase, languageCodes))
-                .ToArray())
-            .Take(phraseLimit)
-            .ToArray();
+        StoredAnalysisRunSummary run = profile.Run;
+        CorpusLens.Application.Queries.DifficultyThresholds thresholds = profile.DifficultyThresholds;
+        StoredDifficultyProfile? difficultyProfile = profile.DifficultyProfile;
 
         Console.WriteLine($"Corpus profile for run {analysisRunId}");
         Console.WriteLine($"Corpus:        {run.CorpusName} ({run.CorpusId})");
         Console.WriteLine($"Book/Source:   {run.BookTitle} ({run.BookId})");
-        Console.WriteLine($"Language:      {FormatLanguageCodes(languageCodes)}");
-        Console.WriteLine($"Profile:       {LanguageProfileLabel(languageProfile)}");
-        Console.WriteLine($"Source books:  {sourceBooks.Count}");
-        Console.WriteLine($"Chapters:      {sourceBooks.Sum(book => book.ChapterCount)}");
+        Console.WriteLine($"Language:      {FormatLanguageCodes(profile.LanguageCodes)}");
+        Console.WriteLine($"Profile:       {LanguageProfileLabel(profile.LanguageProfile)}");
+        Console.WriteLine($"Source books:  {profile.SourceBookCount}");
+        Console.WriteLine($"Chapters:      {profile.ChapterCount}");
         Console.WriteLine($"Status:        {run.Status}");
         Console.WriteLine($"Report:        {run.ReportPath}");
         Console.WriteLine();
@@ -422,29 +407,29 @@ public static class Program
         }
 
         Console.WriteLine();
-        Console.WriteLine($"Top {contentWords.Count} content words");
+        Console.WriteLine($"Top {profile.ContentWords.Count} content words");
         Console.WriteLine("Word                 Count  Per million");
         Console.WriteLine("-------------------  -----  -----------");
-        foreach (StoredWordStatistic word in contentWords)
+        foreach (StoredWordStatistic word in profile.ContentWords)
         {
             Console.WriteLine($"{TrimForColumn(word.Word, 19),-19}  {word.Count,5}  {FormatDouble(word.FrequencyPerMillion),11}");
         }
 
         Console.WriteLine();
-        Console.WriteLine($"Top {functionWords.Count} function words");
+        Console.WriteLine($"Top {profile.FunctionWords.Count} function words");
         Console.WriteLine("Word                 Count  Per million");
         Console.WriteLine("-------------------  -----  -----------");
-        foreach (StoredWordStatistic word in functionWords)
+        foreach (StoredWordStatistic word in profile.FunctionWords)
         {
             Console.WriteLine($"{TrimForColumn(word.Word, 19),-19}  {word.Count,5}  {FormatDouble(word.FrequencyPerMillion),11}");
         }
 
         Console.WriteLine();
-        Console.WriteLine($"Top {phrases.Count} recurring phrases");
+        Console.WriteLine($"Top {profile.Phrases.Count} recurring phrases");
         Console.WriteLine($"Filters: content-word boundary; count >= {minPhraseCount}; chapters >= {minPhraseChapters}; longest only");
         Console.WriteLine("Phrase                              N  Count  Chapters");
         Console.WriteLine("----------------------------------  -  -----  --------");
-        foreach (StoredPhraseStatistic phrase in phrases)
+        foreach (StoredPhraseStatistic phrase in profile.Phrases)
         {
             Console.WriteLine($"{TrimForColumn(phrase.Phrase, 34),-34}  {phrase.N,1}  {phrase.Count,5}  {phrase.ChapterCount,8}");
         }
@@ -495,83 +480,46 @@ public static class Program
 
         CommandLineOptions options = CommandLineOptions.Parse(args.Skip(1).ToArray());
         string databasePath = options.Get("db", DefaultDatabasePath());
-        SqliteCorpusStore store = new(databasePath);
-
-        StoredAnalysisRunSummary? run = await store
-            .GetAnalysisRunSummaryAsync(analysisRunId)
+        TokenIndexHealthService service = new();
+        TokenIndexHealthResult? health = await service
+            .GetHealthAsync(databasePath, analysisRunId)
             .ConfigureAwait(false);
-        if (run is null)
+        if (health is null)
         {
             Console.Error.WriteLine($"Analysis run {analysisRunId} was not found.");
             return 1;
         }
 
-        StoredTokenIndexDiagnostics? diagnostics = await store
-            .GetTokenIndexDiagnosticsAsync(analysisRunId)
-            .ConfigureAwait(false);
-        IReadOnlyList<string> languageCodes = await ReadRunLanguageCodesAsync(store, analysisRunId)
-            .ConfigureAwait(false);
-
-        List<string> warnings = new();
+        StoredAnalysisRunSummary run = health.Run;
+        StoredTokenIndexDiagnostics? diagnostics = health.Diagnostics;
 
         Console.WriteLine($"CorpusLens health for run {analysisRunId}");
         Console.WriteLine($"Run:          {run.CorpusName} / {run.BookTitle}");
-        Console.WriteLine($"Language:     {FormatLanguageCodes(languageCodes)}");
+        Console.WriteLine($"Language:     {FormatLanguageCodes(health.LanguageCodes)}");
         Console.WriteLine($"Status:       {run.Status}");
         Console.WriteLine($"Database:     {databasePath}");
-        Console.WriteLine($"DB size:      {FormatFileSize(databasePath)}");
+        Console.WriteLine($"DB size:      {FormatFileSize(health.DatabaseSizeBytes)}");
         Console.WriteLine();
         Console.WriteLine("Checks");
         Console.WriteLine($"Run exists:             {HealthLabel(true)}");
-
-        bool completed = string.Equals(run.Status, "Completed", StringComparison.OrdinalIgnoreCase);
-        if (!completed)
-        {
-            warnings.Add($"run status is {run.Status}");
-        }
-        Console.WriteLine($"Run completed:          {HealthLabel(completed)}");
+        Console.WriteLine($"Run completed:          {HealthLabel(health.RunCompleted)}");
 
         if (diagnostics is null || !diagnostics.IsIndexed)
         {
-            warnings.Add("token index is missing; query fallback will be used");
             Console.WriteLine($"Token index:            {HealthLabel(false)} not indexed");
             Console.WriteLine($"Expected word tokens:   {run.WordTokenCount}");
             Console.WriteLine("Query path:             fallback to stored chapter text");
             Console.WriteLine();
-            Console.WriteLine($"Overall:                {HealthLabel(false)} warnings");
-            WriteHealthWarnings(warnings);
+            Console.WriteLine("Overall:                WARN");
+            WriteHealthWarnings(health.Warnings);
             return 0;
         }
 
-        bool tokenCoverageOk = diagnostics.WordTokenDelta == 0;
-        bool chaptersOk = diagnostics.IndexedChapterCount == diagnostics.ExpectedChapterCount;
-        bool sourceBooksOk = diagnostics.SourceBookCount == 0
-            ? diagnostics.IndexedBookCount > 0
-            : diagnostics.IndexedSourceBookCount == diagnostics.SourceBookCount;
-        bool positionsOk = diagnostics.RunPositionGapCount == 0;
-
-        if (!tokenCoverageOk)
-        {
-            warnings.Add($"token index delta is {FormatSignedInteger(diagnostics.WordTokenDelta)}");
-        }
-        if (!chaptersOk)
-        {
-            warnings.Add($"indexed chapters are {diagnostics.IndexedChapterCount} of {diagnostics.ExpectedChapterCount}");
-        }
-        if (!sourceBooksOk)
-        {
-            warnings.Add($"indexed source books are {diagnostics.IndexedSourceBookCount} of {diagnostics.SourceBookCount}");
-        }
-        if (!positionsOk)
-        {
-            warnings.Add($"run position gaps: {diagnostics.RunPositionGapCount}");
-        }
-
         Console.WriteLine($"Token index:            {HealthLabel(true)} indexed");
-        Console.WriteLine($"Token coverage:         {HealthLabel(tokenCoverageOk)} {FormatProbability(diagnostics.WordTokenCoveragePercentage / 100.0)} ({diagnostics.IndexedWordTokenCount} of {diagnostics.ExpectedWordTokenCount})");
-        Console.WriteLine($"Chapter coverage:       {HealthLabel(chaptersOk)} {diagnostics.IndexedChapterCount} of {diagnostics.ExpectedChapterCount}");
-        Console.WriteLine($"Source book coverage:   {HealthLabel(sourceBooksOk)} {diagnostics.IndexedSourceBookCount} of {diagnostics.SourceBookCount}");
-        Console.WriteLine($"Run position gaps:      {HealthLabel(positionsOk)} {diagnostics.RunPositionGapCount}");
+        Console.WriteLine($"Token coverage:         {HealthLabel(health.TokenCoverageOk)} {FormatProbability(diagnostics.WordTokenCoveragePercentage / 100.0)} ({diagnostics.IndexedWordTokenCount} of {diagnostics.ExpectedWordTokenCount})");
+        Console.WriteLine($"Chapter coverage:       {HealthLabel(health.ChapterCoverageOk)} {diagnostics.IndexedChapterCount} of {diagnostics.ExpectedChapterCount}");
+        Console.WriteLine($"Source book coverage:   {HealthLabel(health.SourceBookCoverageOk)} {diagnostics.IndexedSourceBookCount} of {diagnostics.SourceBookCount}");
+        Console.WriteLine($"Run position gaps:      {HealthLabel(health.RunPositionsOk)} {diagnostics.RunPositionGapCount}");
         Console.WriteLine($"Run positions:          {FormatRunPositionRange(diagnostics).Trim()}");
         Console.WriteLine();
         Console.WriteLine("Query path");
@@ -580,12 +528,10 @@ public static class Program
         Console.WriteLine($"Phrases:                {(diagnostics.CanUseTokenIndexForContextQueries ? "token index" : "fallback")}");
         Console.WriteLine($"Word-books:             {(diagnostics.CanUseTokenIndexForWordBookDistribution ? "token index" : "fallback")}");
         Console.WriteLine();
-        bool ok = warnings.Count == 0;
-        Console.WriteLine($"Overall:                {HealthLabel(ok)} {(ok ? "OK" : "warnings")}");
-        WriteHealthWarnings(warnings);
+        Console.WriteLine($"Overall:                {(health.OverallOk ? "OK" : "WARN")}");
+        WriteHealthWarnings(health.Warnings);
         return 0;
     }
-
 
     private static async Task<int> PrintTokenIndexAsync(string[] args)
     {
@@ -635,8 +581,8 @@ public static class Program
         Console.WriteLine($"Function:     {diagnostics.StopWordTokenCount}");
         Console.WriteLine($"Chapters:     {diagnostics.IndexedChapterCount} of {diagnostics.ExpectedChapterCount}");
         Console.WriteLine($"Books:        {diagnostics.IndexedBookCount} indexed; {diagnostics.IndexedSourceBookCount} of {diagnostics.SourceBookCount} source books covered");
-        Console.WriteLine($"Run positions:{FormatRunPositionRange(diagnostics)}");
-        Console.WriteLine($"Position gaps:{diagnostics.RunPositionGapCount}");
+        Console.WriteLine($"Run positions: {FormatRunPositionRange(diagnostics).Trim()}");
+        Console.WriteLine($"Position gaps: {diagnostics.RunPositionGapCount}");
         Console.WriteLine();
         Console.WriteLine("Query path");
         Console.WriteLine($"KWIC:         {(diagnostics.CanUseTokenIndexForContextQueries ? "token index" : "fallback")}");
@@ -2177,7 +2123,11 @@ public static class Program
             return "n/a";
         }
 
-        long bytes = new FileInfo(path).Length;
+        return FormatFileSize(new FileInfo(path).Length);
+    }
+
+    private static string FormatFileSize(long bytes)
+    {
         if (bytes < 1024)
         {
             return $"{bytes} B";

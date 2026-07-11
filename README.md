@@ -26,6 +26,10 @@ It is CLI-first, testable, and stores analysis data in SQLite so that corpora ca
 - .NET 10 SDK
 - `make` available from PowerShell/Git Bash/MSYS2 or similar
 
+## Architecture note
+
+CorpusLens keeps analysis and storage logic outside the UI/CLI surfaces. Read-only orchestration for run lists, corpus profiles and health checks lives in `CorpusLens.Application/Queries`, so the CLI and the future Avalonia desktop app can share the same query services.
+
 ## Project layout
 
 ```text

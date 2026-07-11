@@ -1305,3 +1305,7 @@ Added token-index diagnostics to `stats token-index` and SQLite indexes for toke
 ## Milestone 17.7 — Token index consolidation
 
 Added `stats health <runId>` / `make stats-health` as a compact run health check, and documented token-index query paths and fallback behavior. No analysis behavior changed.
+
+## Milestone 18.0 — Application query services
+
+Prepared the UI layer by adding reusable read-only query services in `CorpusLens.Application` for run listing, run summaries, compact corpus profiles, and token-index health. The CLI now uses these services for `stats runs`, `stats summary`, `stats profile`, and `stats health`. No Avalonia UI was added yet.
