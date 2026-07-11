@@ -1220,3 +1220,23 @@ Aggiunto comando `stats collocations <runId> <word>` / `make stats-collocations`
 ### Milestone 11.1 note
 
 Aggiunti filtri `--content-only` e `--function-only` al comando `stats collocations`, con colonna `Type` e target Makefile dedicati. Le collocazioni restano calcolate a frequenza grezza su finestra, ma l'output content-only permette di vedere subito collocati lexicalmente più utili.
+
+---
+
+## Implemented note — Milestone 11.2
+
+Collocation output now includes a lightweight Dice ranking score. Raw counts remain visible, but default ordering favors more characteristic collocates over very common words.
+
+
+## Milestone 11.3 — Collocation thresholds
+
+Aggiunti `--min-count` e `--min-dice` al comando `stats collocations`, con parametri Makefile `MIN_COUNT` e `MIN_DICE`. L'output ora mostra soglie applicate, collocati filtrati e righe mostrate dopo `--limit`.
+
+
+## Milestone 12 implemented
+
+Phrase mining command added with n-range, min-count and optional content-word boundary filtering.
+
+## Maintenance notes
+
+- Milestone 12.1 fixed single-run `stats books`, sentence-classification punctuation edge cases, and n-gram contiguity with `MinWordLength`.

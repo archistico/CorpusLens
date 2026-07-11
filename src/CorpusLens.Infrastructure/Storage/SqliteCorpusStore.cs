@@ -421,10 +421,34 @@ public sealed class SqliteCorpusStore
 
         await using SqliteCommand command = connection.CreateCommand();
         command.CommandText = """
+            WITH SourceBooks AS
+            (
+                SELECT
+                    arb.AnalysisRunId,
+                    arb.BookId,
+                    arb.OrderIndex
+                FROM AnalysisRunBook arb
+                WHERE arb.AnalysisRunId = $analysisRunId
+
+                UNION ALL
+
+                SELECT
+                    ar.Id AS AnalysisRunId,
+                    ar.BookId,
+                    1 AS OrderIndex
+                FROM AnalysisRun ar
+                WHERE ar.Id = $analysisRunId
+                  AND NOT EXISTS
+                  (
+                      SELECT 1
+                      FROM AnalysisRunBook existing
+                      WHERE existing.AnalysisRunId = $analysisRunId
+                  )
+            )
             SELECT
-                arb.AnalysisRunId,
-                arb.BookId,
-                arb.OrderIndex,
+                sb.AnalysisRunId,
+                sb.BookId,
+                sb.OrderIndex,
                 b.Title,
                 b.Author,
                 b.LanguageCode,
@@ -432,20 +456,19 @@ public sealed class SqliteCorpusStore
                 b.FileHash,
                 COUNT(ch.Id) AS ChapterCount,
                 COALESCE(SUM(ch.CharacterCount), 0) AS CharacterCount
-            FROM AnalysisRunBook arb
-            INNER JOIN Book b ON b.Id = arb.BookId
+            FROM SourceBooks sb
+            INNER JOIN Book b ON b.Id = sb.BookId
             LEFT JOIN Chapter ch ON ch.BookId = b.Id
-            WHERE arb.AnalysisRunId = $analysisRunId
             GROUP BY
-                arb.AnalysisRunId,
-                arb.BookId,
-                arb.OrderIndex,
+                sb.AnalysisRunId,
+                sb.BookId,
+                sb.OrderIndex,
                 b.Title,
                 b.Author,
                 b.LanguageCode,
                 b.OriginalFilePath,
                 b.FileHash
-            ORDER BY arb.OrderIndex;
+            ORDER BY sb.OrderIndex;
             """;
         AddParameter(command, "$analysisRunId", analysisRunId);
 
@@ -579,6 +602,7 @@ public sealed class SqliteCorpusStore
             .ConfigureAwait(false);
 
         Dictionary<string, CollocationAccumulator> accumulators = new(StringComparer.Ordinal);
+        Dictionary<string, int> corpusWordCounts = new(StringComparer.Ordinal);
         int targetCount = 0;
 
         foreach (StoredChapter chapter in chapters)
@@ -589,7 +613,8 @@ public sealed class SqliteCorpusStore
                 normalizedWord,
                 safeWindow,
                 chapter.CleanText,
-                accumulators);
+                accumulators,
+                corpusWordCounts);
         }
 
         if (targetCount == 0)
@@ -598,11 +623,61 @@ public sealed class SqliteCorpusStore
         }
 
         return accumulators.Values
-            .OrderByDescending(item => item.Count)
+            .Select(item => item.ToStoredStatistic(
+                targetCount,
+                corpusWordCounts.TryGetValue(item.Collocate, out int collocateCount) ? collocateCount : 0))
+            .OrderByDescending(item => item.DiceCoefficient)
+            .ThenByDescending(item => item.Count)
             .ThenByDescending(item => item.RightCount)
             .ThenBy(item => item.Collocate, StringComparer.OrdinalIgnoreCase)
             .Take(safeLimit)
-            .Select(item => item.ToStoredStatistic(targetCount))
+            .ToArray();
+    }
+
+
+    public async Task<IReadOnlyList<StoredPhraseStatistic>> ListPhrasesAsync(
+        long analysisRunId,
+        int minN = 2,
+        int maxN = 5,
+        int minCount = 2,
+        int limit = 50,
+        CancellationToken cancellationToken = default)
+    {
+        StoredAnalysisRunSummary? run = await GetAnalysisRunSummaryAsync(analysisRunId, cancellationToken)
+            .ConfigureAwait(false);
+        if (run is null)
+        {
+            return Array.Empty<StoredPhraseStatistic>();
+        }
+
+        int safeMinN = Math.Clamp(minN, 2, 8);
+        int safeMaxN = Math.Clamp(maxN, safeMinN, 8);
+        int safeMinCount = Math.Max(1, minCount);
+        int safeLimit = NormalizeLimit(limit);
+        IReadOnlyList<StoredChapter> chapters = await ListChaptersAsync(run.BookId, cancellationToken)
+            .ConfigureAwait(false);
+
+        Dictionary<PhraseKey, PhraseAccumulator> accumulators = new();
+        int totalWordTokenCount = 0;
+
+        foreach (StoredChapter chapter in chapters)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            totalWordTokenCount += AddPhrasesFromChapter(
+                analysisRunId,
+                chapter.CleanText,
+                safeMinN,
+                safeMaxN,
+                accumulators);
+        }
+
+        return accumulators.Values
+            .Where(item => item.Count >= safeMinCount)
+            .Select(item => item.ToStoredStatistic(totalWordTokenCount))
+            .OrderByDescending(item => item.Count)
+            .ThenByDescending(item => item.N)
+            .ThenBy(item => item.Phrase, StringComparer.OrdinalIgnoreCase)
+            .Take(safeLimit)
             .ToArray();
     }
 
@@ -1193,6 +1268,85 @@ public sealed class SqliteCorpusStore
     }
 
 
+
+    private static int AddPhrasesFromChapter(
+        long analysisRunId,
+        string text,
+        int minN,
+        int maxN,
+        IDictionary<PhraseKey, PhraseAccumulator> accumulators)
+    {
+        MatchCollection matches = WordContextTokenRegex.Matches(text);
+        if (matches.Count == 0)
+        {
+            return 0;
+        }
+
+        List<WordContextToken> tokens = new(matches.Count);
+        foreach (Match match in matches)
+        {
+            string normalizedText = NormalizeContextWord(match.Value);
+            tokens.Add(new WordContextToken(
+                match.Index,
+                match.Index + match.Length,
+                match.Value,
+                normalizedText));
+        }
+
+        HashSet<PhraseKey> phrasesInChapter = new();
+        for (int n = minN; n <= maxN; n++)
+        {
+            if (tokens.Count < n)
+            {
+                continue;
+            }
+
+            for (int startIndex = 0; startIndex <= tokens.Count - n; startIndex++)
+            {
+                if (!CanBuildPhraseAcrossTokens(text, tokens, startIndex, n))
+                {
+                    continue;
+                }
+
+                string phrase = string.Join(' ', tokens.Skip(startIndex).Take(n).Select(token => token.NormalizedText));
+                PhraseKey key = new(n, phrase);
+                if (!accumulators.TryGetValue(key, out PhraseAccumulator? accumulator))
+                {
+                    accumulator = new PhraseAccumulator(analysisRunId, key);
+                    accumulators.Add(key, accumulator);
+                }
+
+                accumulator.Count++;
+                phrasesInChapter.Add(key);
+            }
+        }
+
+        foreach (PhraseKey key in phrasesInChapter)
+        {
+            accumulators[key].ChapterCount++;
+        }
+
+        return tokens.Count;
+    }
+
+    private static bool CanBuildPhraseAcrossTokens(
+        string text,
+        IReadOnlyList<WordContextToken> tokens,
+        int startIndex,
+        int n)
+    {
+        for (int index = startIndex; index < startIndex + n - 1; index++)
+        {
+            string separator = text[tokens[index].EndOffset..tokens[index + 1].StartOffset];
+            if (!separator.All(char.IsWhiteSpace))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     private static void AddWordContextsFromChapter(
         long analysisRunId,
         long bookId,
@@ -1211,11 +1365,12 @@ public sealed class SqliteCorpusStore
         List<WordContextToken> tokens = new(matches.Count);
         foreach (Match match in matches)
         {
+            string normalizedText = NormalizeContextWord(match.Value);
             tokens.Add(new WordContextToken(
                 match.Index,
                 match.Index + match.Length,
                 match.Value,
-                NormalizeContextWord(match.Value)));
+                normalizedText));
         }
 
         int occurrenceIndex = 0;
@@ -1255,7 +1410,8 @@ public sealed class SqliteCorpusStore
         string normalizedWord,
         int window,
         string text,
-        IDictionary<string, CollocationAccumulator> accumulators)
+        IDictionary<string, CollocationAccumulator> accumulators,
+        IDictionary<string, int> corpusWordCounts)
     {
         MatchCollection matches = WordContextTokenRegex.Matches(text);
         if (matches.Count == 0)
@@ -1266,11 +1422,16 @@ public sealed class SqliteCorpusStore
         List<WordContextToken> tokens = new(matches.Count);
         foreach (Match match in matches)
         {
+            string normalizedText = NormalizeContextWord(match.Value);
             tokens.Add(new WordContextToken(
                 match.Index,
                 match.Index + match.Length,
                 match.Value,
-                NormalizeContextWord(match.Value)));
+                normalizedText));
+
+            corpusWordCounts[normalizedText] = corpusWordCounts.TryGetValue(normalizedText, out int currentCount)
+                ? currentCount + 1
+                : 1;
         }
 
         int targetCount = 0;
@@ -1647,6 +1808,41 @@ public sealed class SqliteCorpusStore
         string NormalizedText);
 
 
+
+    private sealed record PhraseKey(int N, string Text);
+
+    private sealed class PhraseAccumulator
+    {
+        public PhraseAccumulator(long analysisRunId, PhraseKey key)
+        {
+            AnalysisRunId = analysisRunId;
+            Key = key;
+        }
+
+        public long AnalysisRunId { get; }
+
+        public PhraseKey Key { get; }
+
+        public int Count { get; set; }
+
+        public int ChapterCount { get; set; }
+
+        public StoredPhraseStatistic ToStoredStatistic(int totalWordTokenCount)
+        {
+            double frequencyPerMillion = totalWordTokenCount == 0
+                ? 0
+                : Count * 1_000_000.0 / totalWordTokenCount;
+
+            return new StoredPhraseStatistic(
+                AnalysisRunId,
+                Key.N,
+                Key.Text,
+                Count,
+                ChapterCount,
+                frequencyPerMillion);
+        }
+    }
+
     private sealed class CollocationAccumulator
     {
         public CollocationAccumulator(long analysisRunId, string word, string collocate)
@@ -1684,10 +1880,14 @@ public sealed class SqliteCorpusStore
             }
         }
 
-        public StoredCollocationStatistic ToStoredStatistic(int targetCount)
+        public StoredCollocationStatistic ToStoredStatistic(int targetCount, int collocateCount)
         {
             double ratePerTarget = targetCount == 0 ? 0 : Count / (double)targetCount;
             double averageDistance = Count == 0 ? 0 : DistanceSum / (double)Count;
+            int boundedCooccurrenceCount = Math.Min(Count, Math.Min(targetCount, collocateCount));
+            double diceCoefficient = targetCount + collocateCount == 0
+                ? 0
+                : (2.0 * boundedCooccurrenceCount) / (targetCount + collocateCount);
 
             return new StoredCollocationStatistic(
                 AnalysisRunId,
@@ -1697,7 +1897,8 @@ public sealed class SqliteCorpusStore
                 LeftCount,
                 RightCount,
                 ratePerTarget,
-                averageDistance);
+                averageDistance,
+                diceCoefficient);
         }
     }
 

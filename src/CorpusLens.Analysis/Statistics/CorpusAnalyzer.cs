@@ -168,7 +168,6 @@ public sealed class CorpusAnalyzer
             {
                 IReadOnlyList<string> words = sentence.WordTokens
                     .Select(token => token.NormalizedText)
-                    .Where(word => word.Length >= settings.MinWordLength)
                     .ToArray();
 
                 for (int n = settings.NGramMinN; n <= settings.NGramMaxN; n++)
@@ -180,7 +179,13 @@ public sealed class CorpusAnalyzer
 
                     for (int i = 0; i <= words.Count - n; i++)
                     {
-                        string text = string.Join(' ', words.Skip(i).Take(n));
+                        IReadOnlyList<string> ngramWords = words.Skip(i).Take(n).ToArray();
+                        if (ngramWords.Any(word => word.Length < settings.MinWordLength))
+                        {
+                            continue;
+                        }
+
+                        string text = string.Join(' ', ngramWords);
                         NGramKey key = new(n, text);
 
                         if (!accumulators.TryGetValue(key, out NGramAccumulator? accumulator))

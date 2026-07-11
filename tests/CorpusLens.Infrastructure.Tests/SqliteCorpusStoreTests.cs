@@ -422,6 +422,58 @@ public sealed class SqliteCorpusStoreTests
     }
 
 
+
+    [Fact]
+    public async Task ListAnalysisRunBooksAsync_ShouldFallbackToRunBookForSingleBookRuns()
+    {
+        using TestDatabase database = new();
+        string sourceFile = database.CreateSourceFile("alice.epub", "fake epub content");
+        SqliteCorpusStore store = new(database.Path);
+        StoredCorpus corpus = await store.CreateCorpusAsync("English Kids", "en");
+
+        ImportedBook book = new(
+            "book-1",
+            "Alice",
+            "Lewis Carroll",
+            "en",
+            sourceFile,
+            new[]
+            {
+                new ImportedChapter(1, "Chapter I", "chapter1.xhtml", string.Empty, "Hello, Alice."),
+                new ImportedChapter(2, "Chapter II", "chapter2.xhtml", string.Empty, "Bye, Alice.")
+            });
+
+        StoredBookImport storedImport = await store.SaveImportedBookAsync(corpus.Id, book);
+        CorpusAnalysisResult analysis = new(
+            new CorpusSummary(1, 2, 6, 4, 3, 2.0, 4.5),
+            Array.Empty<WordFrequency>(),
+            Array.Empty<NGramFrequency>(),
+            Array.Empty<NextWordFrequency>(),
+            Array.Empty<AnalyzedSentence>());
+
+        StoredAnalysisRun run = await store.SaveAnalysisRunAsync(
+            corpus.Id,
+            storedImport.Book.Id,
+            new AnalysisSettings(),
+            analysis,
+            "report.md",
+            "words.csv",
+            "ngrams.csv",
+            "next_words.csv",
+            "extracted_text.txt");
+
+        IReadOnlyList<StoredAnalysisRunBook> books = await store.ListAnalysisRunBooksAsync(run.Id);
+
+        StoredAnalysisRunBook listedBook = Assert.Single(books);
+        Assert.Equal(run.Id, listedBook.AnalysisRunId);
+        Assert.Equal(storedImport.Book.Id, listedBook.BookId);
+        Assert.Equal(1, listedBook.OrderIndex);
+        Assert.Equal("Alice", listedBook.Title);
+        Assert.Equal("Lewis Carroll", listedBook.Author);
+        Assert.Equal(2, listedBook.ChapterCount);
+        Assert.Equal("Hello, Alice.Bye, Alice.".Length, listedBook.CharacterCount);
+    }
+
     [Fact]
     public async Task SaveAnalysisRunBooksAsync_ShouldPersistRealBooksForAggregateRun()
     {
@@ -615,13 +667,115 @@ public sealed class SqliteCorpusStoreTests
         Assert.Equal(1, rabbit.RightCount);
         Assert.Equal(1.0, rabbit.RatePerTarget, precision: 2);
         Assert.Equal(1.5, rabbit.AverageDistance, precision: 2);
+        Assert.Equal(1.0, rabbit.DiceCoefficient, precision: 2);
 
         StoredCollocationStatistic white = Assert.Single(collocations, item => item.Collocate == "white");
         Assert.Equal(2, white.Count);
         Assert.Equal(1, white.LeftCount);
         Assert.Equal(1, white.RightCount);
         Assert.Equal(2.0, white.AverageDistance, precision: 2);
+        // The single "white" token appears inside the window of two target occurrences.
+        // Dice is bounded by corpus word frequency, so the co-occurrence used for Dice is 1.
+        Assert.Equal(0.67, white.DiceCoefficient, precision: 2);
     }
+
+    [Fact]
+    public async Task ListCollocationsAsync_ShouldRankCharacteristicCollocatesBeforeFrequentFunctionWords()
+    {
+        using TestDatabase database = new();
+        string sourceFile = database.CreateSourceFile("whale.epub", "fake epub content");
+        SqliteCorpusStore store = new(database.Path);
+        StoredCorpus corpus = await store.CreateCorpusAsync("English Sea", "en");
+
+        ImportedBook book = new(
+            "whale",
+            "Whale Book",
+            "Test Author",
+            "en",
+            sourceFile,
+            new[]
+            {
+                new ImportedChapter(1, "Chapter I", "chapter1.xhtml", string.Empty,
+                    "the sperm whale met the sperm whale. the whale saw the sea. the sky and the sea were blue.")
+            });
+
+        StoredBookImport storedImport = await store.SaveImportedBookAsync(corpus.Id, book);
+        CorpusAnalysisResult analysis = new(
+            new CorpusSummary(1, 3, 18, 18, 8, 6.0, 4.0),
+            Array.Empty<WordFrequency>(),
+            Array.Empty<NGramFrequency>(),
+            Array.Empty<NextWordFrequency>(),
+            Array.Empty<AnalyzedSentence>());
+
+        StoredAnalysisRun run = await store.SaveAnalysisRunAsync(
+            corpus.Id,
+            storedImport.Book.Id,
+            new AnalysisSettings(),
+            analysis,
+            "report.md",
+            "words.csv",
+            "ngrams.csv",
+            "next_words.csv",
+            "extracted_text.txt");
+
+        IReadOnlyList<StoredCollocationStatistic> collocations = await store.ListCollocationsAsync(run.Id, "whale", window: 2, limit: 10);
+
+        Assert.NotEmpty(collocations);
+        Assert.Equal("sperm", collocations[0].Collocate);
+        Assert.True(collocations[0].DiceCoefficient > collocations.Single(item => item.Collocate == "the").DiceCoefficient);
+    }
+
+    [Fact]
+    public async Task ListPhrasesAsync_ShouldMineRepeatedPhrasesWithoutCrossingPunctuation()
+    {
+        using TestDatabase database = new();
+        string sourceFile = database.CreateSourceFile("italian.epub", "fake epub content");
+        SqliteCorpusStore store = new(database.Path);
+        StoredCorpus corpus = await store.CreateCorpusAsync("Italian Literature", "it");
+
+        ImportedBook book = new(
+            "italian",
+            "Italian Book",
+            "Test Author",
+            "it",
+            sourceFile,
+            new[]
+            {
+                new ImportedChapter(1, "Chapter I", "chapter1.xhtml", string.Empty,
+                    "Piazza del Duomo era piena. Nella piazza del Duomo arrivò gente. Piazza, del resto, era grande.")
+            });
+
+        StoredBookImport storedImport = await store.SaveImportedBookAsync(corpus.Id, book);
+        CorpusAnalysisResult analysis = new(
+            new CorpusSummary(1, 3, 16, 16, 11, 5.33, 5.0),
+            Array.Empty<WordFrequency>(),
+            Array.Empty<NGramFrequency>(),
+            Array.Empty<NextWordFrequency>(),
+            Array.Empty<AnalyzedSentence>());
+
+        StoredAnalysisRun run = await store.SaveAnalysisRunAsync(
+            corpus.Id,
+            storedImport.Book.Id,
+            new AnalysisSettings(),
+            analysis,
+            "report.md",
+            "words.csv",
+            "ngrams.csv",
+            "next_words.csv",
+            "extracted_text.txt");
+
+        IReadOnlyList<StoredPhraseStatistic> phrases = await store.ListPhrasesAsync(run.Id, minN: 2, maxN: 3, minCount: 2, limit: 10);
+
+        StoredPhraseStatistic piazzaDelDuomo = Assert.Single(phrases, phrase => phrase.Phrase == "piazza del duomo");
+        Assert.Equal(3, piazzaDelDuomo.N);
+        Assert.Equal(2, piazzaDelDuomo.Count);
+        Assert.Equal(1, piazzaDelDuomo.ChapterCount);
+        Assert.True(piazzaDelDuomo.FrequencyPerMillion > 0);
+
+        StoredPhraseStatistic piazzaDel = Assert.Single(phrases, phrase => phrase.Phrase == "piazza del");
+        Assert.Equal(2, piazzaDel.Count);
+    }
+
 
 
     private sealed class TestDatabase : IDisposable

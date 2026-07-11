@@ -1,0 +1,16 @@
+E:\sviluppo\2026 CorpusLens\CorpusLens\src\CorpusLens.Infrastructure\bin\Debug\net10.0\CorpusLens.Infrastructure.deps.json
+E:\sviluppo\2026 CorpusLens\CorpusLens\src\CorpusLens.Infrastructure\bin\Debug\net10.0\CorpusLens.Infrastructure.dll
+E:\sviluppo\2026 CorpusLens\CorpusLens\src\CorpusLens.Infrastructure\bin\Debug\net10.0\CorpusLens.Infrastructure.pdb
+E:\sviluppo\2026 CorpusLens\CorpusLens\src\CorpusLens.Infrastructure\bin\Debug\net10.0\CorpusLens.Domain.dll
+E:\sviluppo\2026 CorpusLens\CorpusLens\src\CorpusLens.Infrastructure\bin\Debug\net10.0\CorpusLens.Domain.pdb
+E:\sviluppo\2026 CorpusLens\CorpusLens\src\CorpusLens.Infrastructure\obj\Debug\net10.0\CorpusLens.Infrastructure.csproj.AssemblyReference.cache
+E:\sviluppo\2026 CorpusLens\CorpusLens\src\CorpusLens.Infrastructure\obj\Debug\net10.0\CorpusLens.Infrastructure.GeneratedMSBuildEditorConfig.editorconfig
+E:\sviluppo\2026 CorpusLens\CorpusLens\src\CorpusLens.Infrastructure\obj\Debug\net10.0\CorpusLens.Infrastructure.AssemblyInfoInputs.cache
+E:\sviluppo\2026 CorpusLens\CorpusLens\src\CorpusLens.Infrastructure\obj\Debug\net10.0\CorpusLens.Infrastructure.AssemblyInfo.cs
+E:\sviluppo\2026 CorpusLens\CorpusLens\src\CorpusLens.Infrastructure\obj\Debug\net10.0\CorpusLens.Infrastructure.csproj.CoreCompileInputs.cache
+E:\sviluppo\2026 CorpusLens\CorpusLens\src\CorpusLens.Infrastructure\obj\Debug\net10.0\CorpusLe.9FE2A695.Up2Date
+E:\sviluppo\2026 CorpusLens\CorpusLens\src\CorpusLens.Infrastructure\obj\Debug\net10.0\CorpusLens.Infrastructure.dll
+E:\sviluppo\2026 CorpusLens\CorpusLens\src\CorpusLens.Infrastructure\obj\Debug\net10.0\refint\CorpusLens.Infrastructure.dll
+E:\sviluppo\2026 CorpusLens\CorpusLens\src\CorpusLens.Infrastructure\obj\Debug\net10.0\CorpusLens.Infrastructure.pdb
+E:\sviluppo\2026 CorpusLens\CorpusLens\src\CorpusLens.Infrastructure\obj\Debug\net10.0\ref\CorpusLens.Infrastructure.dll
+E:\sviluppo\2026 CorpusLens\CorpusLens\src\CorpusLens.Infrastructure\obj\Debug\net10.0\CorpusLens.Infrastructure.sourcelink.json

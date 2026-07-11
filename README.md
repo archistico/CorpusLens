@@ -93,9 +93,11 @@ Collocations:
 
 ```powershell
 make stats-collocations RUN=1 WORD="whale" WINDOW=4 LIMIT=30
-make stats-collocations-content RUN=1 WORD="whale" WINDOW=4 LIMIT=30
-make stats-collocations-function RUN=1 WORD="love" WINDOW=4 LIMIT=30
+make stats-collocations-content RUN=1 WORD="whale" WINDOW=4 LIMIT=30 MIN_COUNT=3
+make stats-collocations-function RUN=1 WORD="love" WINDOW=4 LIMIT=30 MIN_COUNT=3
 ```
+
+Collocations are ranked with a lightweight Dice score while still showing raw counts. Use `MIN_COUNT` and `MIN_DICE` to hide weak low-frequency matches.
 
 Import diagnostics:
 

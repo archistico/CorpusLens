@@ -46,6 +46,27 @@ public sealed class CorpusAnalyzerTests
         Assert.Equal(2, dontKnow.Count);
     }
 
+
+    [Fact]
+    public void Analyze_ShouldNotBuildNGramsAcrossFilteredShortWords()
+    {
+        CorpusAnalyzer analyzer = new();
+        TextDocument document = new("sample", "Sample", "en", "Alice a rabbit. Alice rabbit.");
+
+        CorpusAnalysisResult result = analyzer.Analyze(document, new AnalysisSettings
+        {
+            MinWordLength = 2,
+            NGramMinN = 2,
+            NGramMaxN = 2,
+            MinNGramCount = 1,
+            MinNextWordPairCount = 1
+        });
+
+        Assert.DoesNotContain(result.NGrams, ngram => ngram.Text == "alice rabbit" && ngram.Count == 2);
+        NGramFrequency aliceRabbit = Assert.Single(result.NGrams, ngram => ngram.Text == "alice rabbit");
+        Assert.Equal(1, aliceRabbit.Count);
+    }
+
     [Fact]
     public void Analyze_ShouldCalculateNextWords()
     {

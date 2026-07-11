@@ -262,7 +262,6 @@ public sealed class EpubBoilerplateCleaner
 
             if (normalized is "informazioni" or "copertina" or "colophon" or "liber liber" or "indice"
                 || normalized.StartsWith("questo e-book", StringComparison.Ordinal)
-                || normalized.StartsWith("questo e-book", StringComparison.Ordinal)
                 || normalized.StartsWith("e-book", StringComparison.Ordinal)
                 || normalized.StartsWith("titolo:", StringComparison.Ordinal)
                 || normalized.StartsWith("autore:", StringComparison.Ordinal)

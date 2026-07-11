@@ -1,0 +1,12 @@
+E:\sviluppo\2026 CorpusLens\CorpusLens\src\CorpusLens.Domain\bin\Debug\net10.0\CorpusLens.Domain.deps.json
+E:\sviluppo\2026 CorpusLens\CorpusLens\src\CorpusLens.Domain\bin\Debug\net10.0\CorpusLens.Domain.dll
+E:\sviluppo\2026 CorpusLens\CorpusLens\src\CorpusLens.Domain\bin\Debug\net10.0\CorpusLens.Domain.pdb
+E:\sviluppo\2026 CorpusLens\CorpusLens\src\CorpusLens.Domain\obj\Debug\net10.0\CorpusLens.Domain.GeneratedMSBuildEditorConfig.editorconfig
+E:\sviluppo\2026 CorpusLens\CorpusLens\src\CorpusLens.Domain\obj\Debug\net10.0\CorpusLens.Domain.AssemblyInfoInputs.cache
+E:\sviluppo\2026 CorpusLens\CorpusLens\src\CorpusLens.Domain\obj\Debug\net10.0\CorpusLens.Domain.AssemblyInfo.cs
+E:\sviluppo\2026 CorpusLens\CorpusLens\src\CorpusLens.Domain\obj\Debug\net10.0\CorpusLens.Domain.csproj.CoreCompileInputs.cache
+E:\sviluppo\2026 CorpusLens\CorpusLens\src\CorpusLens.Domain\obj\Debug\net10.0\CorpusLens.Domain.dll
+E:\sviluppo\2026 CorpusLens\CorpusLens\src\CorpusLens.Domain\obj\Debug\net10.0\refint\CorpusLens.Domain.dll
+E:\sviluppo\2026 CorpusLens\CorpusLens\src\CorpusLens.Domain\obj\Debug\net10.0\CorpusLens.Domain.pdb
+E:\sviluppo\2026 CorpusLens\CorpusLens\src\CorpusLens.Domain\obj\Debug\net10.0\ref\CorpusLens.Domain.dll
+E:\sviluppo\2026 CorpusLens\CorpusLens\src\CorpusLens.Domain\obj\Debug\net10.0\CorpusLens.Domain.sourcelink.json

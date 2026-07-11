@@ -251,6 +251,7 @@ public static class Program
             "books" => await PrintAnalysisRunBooksAsync(subCommandArgs).ConfigureAwait(false),
             "word-books" => await PrintWordBookDistributionAsync(subCommandArgs).ConfigureAwait(false),
             "collocations" => await PrintCollocationsAsync(subCommandArgs).ConfigureAwait(false),
+            "phrases" => await PrintPhrasesAsync(subCommandArgs).ConfigureAwait(false),
             "words" => await PrintTopWordsAsync(subCommandArgs).ConfigureAwait(false),
             "word" => await PrintWordDetailAsync(subCommandArgs).ConfigureAwait(false),
             "kwic" => await PrintWordContextsAsync(subCommandArgs).ConfigureAwait(false),
@@ -416,7 +417,7 @@ public static class Program
     {
         if (!TryReadRunId(args, out long analysisRunId) || args.Length < 2)
         {
-            Console.Error.WriteLine("Usage: stats collocations <runId> <word> [--window <n>] [--limit <n>] [--content-only|--function-only] [--db <file>]");
+            Console.Error.WriteLine("Usage: stats collocations <runId> <word> [--window <n>] [--limit <n>] [--min-count <n>] [--min-dice <n>] [--content-only|--function-only] [--db <file>]");
             return 1;
         }
 
@@ -425,10 +426,10 @@ public static class Program
         int window = TryReadIntOption(options, "window") ?? 4;
         int safeWindow = Math.Clamp(window, 1, 10);
         int requestedLimit = ReadLimit(options);
+        int minCount = Math.Max(1, TryReadIntOption(options, "min-count") ?? 1);
+        double minDice = Math.Clamp(TryReadDoubleOption(options, "min-dice") ?? 0.0, 0.0, 1.0);
         CollocationWordFilter filter = ReadCollocationWordFilter(options);
-        int fetchLimit = filter == CollocationWordFilter.All
-            ? requestedLimit
-            : Math.Min(Math.Max(requestedLimit * 10, 200), 2_000);
+        int fetchLimit = Math.Min(Math.Max(requestedLimit * 20, 200), 1_000);
 
         SqliteCorpusStore store = new(options.Get("db", DefaultDatabasePath()));
         IReadOnlyList<string> languageCodes = await ReadRunLanguageCodesAsync(store, analysisRunId)
@@ -438,35 +439,106 @@ public static class Program
             .ListCollocationsAsync(analysisRunId, wordText, safeWindow, fetchLimit)
             .ConfigureAwait(false);
 
-        IReadOnlyList<StoredCollocationStatistic> collocations = ApplyCollocationFilter(
-                allCollocations,
-                filter,
-                languageCodes)
+        IReadOnlyList<StoredCollocationStatistic> matchedCollocations = ApplyCollocationThresholds(
+                ApplyCollocationFilter(
+                    allCollocations,
+                    filter,
+                    languageCodes),
+                minCount,
+                minDice)
+            .ToArray();
+
+        IReadOnlyList<StoredCollocationStatistic> collocations = matchedCollocations
             .Take(requestedLimit)
             .ToArray();
 
         Console.WriteLine($"Collocations for '{wordText}' in run {analysisRunId}");
         Console.WriteLine($"Window: {safeWindow} words per side");
         Console.WriteLine($"Filter: {CollocationFilterLabel(filter)}");
-        Console.WriteLine($"Shown collocates: {collocations.Count} of {allCollocations.Count}");
+        Console.WriteLine("Ranking: Dice score");
+        Console.WriteLine($"Minimum count: {minCount}");
+        Console.WriteLine($"Minimum Dice: {FormatDouble(minDice)}");
+        Console.WriteLine($"Matched collocates: {matchedCollocations.Count}");
+        Console.WriteLine($"Shown collocates: {collocations.Count} of {matchedCollocations.Count}");
         Console.WriteLine();
-        Console.WriteLine("#    Collocate            Type      Count  Left  Right  Per target  Avg distance");
-        Console.WriteLine("---  -------------------  --------  -----  ----  -----  ----------  ------------");
+        Console.WriteLine("#    Collocate            Type      Count  Left  Right  Per target  Avg distance  Dice");
+        Console.WriteLine("---  -------------------  --------  -----  ----  -----  ----------  ------------  ------");
         for (int index = 0; index < collocations.Count; index++)
         {
             StoredCollocationStatistic collocation = collocations[index];
             string type = IsFunctionCollocate(collocation, languageCodes) ? "function" : "content";
-            Console.WriteLine($"{index + 1,3}  {TrimForColumn(collocation.Collocate, 19),-19}  {type,-8}  {collocation.Count,5}  {collocation.LeftCount,4}  {collocation.RightCount,5}  {FormatDouble(collocation.RatePerTarget),10}  {FormatDouble(collocation.AverageDistance),12}");
+            Console.WriteLine($"{index + 1,3}  {TrimForColumn(collocation.Collocate, 19),-19}  {type,-8}  {collocation.Count,5}  {collocation.LeftCount,4}  {collocation.RightCount,5}  {FormatDouble(collocation.RatePerTarget),10}  {FormatDouble(collocation.AverageDistance),12}  {FormatDouble(collocation.DiceCoefficient),6}");
         }
 
         if (collocations.Count == 0)
         {
-            Console.WriteLine("No collocations found for the selected filter.");
+            Console.WriteLine("No collocations found for the selected filter and thresholds.");
         }
 
         return 0;
     }
 
+
+
+    private static async Task<int> PrintPhrasesAsync(string[] args)
+    {
+        if (!TryReadRunId(args, out long analysisRunId))
+        {
+            Console.Error.WriteLine("Usage: stats phrases <runId> [--n <n>|--min-n <n> --max-n <n>] [--min-count <n>] [--limit <n>] [--content-boundary] [--db <file>]");
+            return 1;
+        }
+
+        CommandLineOptions options = CommandLineOptions.Parse(args.Skip(1).ToArray());
+        int? fixedN = TryReadIntOption(options, "n");
+        int minN = fixedN ?? TryReadIntOption(options, "min-n") ?? 2;
+        int maxN = fixedN ?? TryReadIntOption(options, "max-n") ?? 5;
+        int safeMinN = Math.Clamp(minN, 2, 8);
+        int safeMaxN = Math.Clamp(maxN, safeMinN, 8);
+        int minCount = Math.Max(1, TryReadIntOption(options, "min-count") ?? 2);
+        int requestedLimit = ReadLimit(options);
+        bool contentBoundaryOnly = options.Has("content-boundary");
+        int fetchLimit = Math.Min(Math.Max(requestedLimit * 20, 200), 2_000);
+
+        SqliteCorpusStore store = new(options.Get("db", DefaultDatabasePath()));
+        IReadOnlyList<string> languageCodes = await ReadRunLanguageCodesAsync(store, analysisRunId)
+            .ConfigureAwait(false);
+
+        IReadOnlyList<StoredPhraseStatistic> allPhrases = await store
+            .ListPhrasesAsync(analysisRunId, safeMinN, safeMaxN, minCount, fetchLimit)
+            .ConfigureAwait(false);
+
+        IReadOnlyList<StoredPhraseStatistic> matchedPhrases = allPhrases
+            .Where(phrase => !contentBoundaryOnly || HasContentWordBoundary(phrase.Phrase, languageCodes))
+            .ToArray();
+        IReadOnlyList<StoredPhraseStatistic> phrases = matchedPhrases
+            .Take(requestedLimit)
+            .ToArray();
+
+        Console.WriteLine($"Phrases for run {analysisRunId}");
+        Console.WriteLine(fixedN is null
+            ? $"N range: {safeMinN}-{safeMaxN}"
+            : $"N: {safeMinN}");
+        Console.WriteLine($"Minimum count: {minCount}");
+        Console.WriteLine($"Filter: {(contentBoundaryOnly ? "content-word boundary" : "all phrases")}");
+        Console.WriteLine("Ranking: Count, then longer phrases");
+        Console.WriteLine($"Matched phrases: {matchedPhrases.Count}");
+        Console.WriteLine($"Shown phrases: {phrases.Count} of {matchedPhrases.Count}");
+        Console.WriteLine();
+        Console.WriteLine("#    Phrase                              N  Count  Chapters  Per million  Boundary");
+        Console.WriteLine("---  ----------------------------------  -  -----  --------  -----------  -----------------");
+        for (int index = 0; index < phrases.Count; index++)
+        {
+            StoredPhraseStatistic phrase = phrases[index];
+            Console.WriteLine($"{index + 1,3}  {TrimForColumn(phrase.Phrase, 34),-34}  {phrase.N,1}  {phrase.Count,5}  {phrase.ChapterCount,8}  {FormatDouble(phrase.FrequencyPerMillion),11}  {PhraseBoundaryLabel(phrase.Phrase, languageCodes),-17}");
+        }
+
+        if (phrases.Count == 0)
+        {
+            Console.WriteLine("No phrases found for the selected thresholds.");
+        }
+
+        return 0;
+    }
 
     private static async Task<int> PrintTopWordsAsync(string[] args)
     {
@@ -920,7 +992,7 @@ public static class Program
         Console.WriteLine("  stats summary <runId> [--db <file>]");
         Console.WriteLine("  stats books <runId> [--db <file>]");
         Console.WriteLine("  stats word-books <runId> <word> [--limit <n>] [--db <file>]");
-        Console.WriteLine("  stats collocations <runId> <word> [--window <n>] [--limit <n>] [--content-only|--function-only] [--db <file>]");
+        Console.WriteLine("  stats collocations <runId> <word> [--window <n>] [--limit <n>] [--min-count <n>] [--min-dice <n>] [--content-only|--function-only] [--db <file>]");
         Console.WriteLine("  stats words <runId> [--limit <n>] [--content-only] [--function-only] [--db <file>]");
         Console.WriteLine("  stats word <runId> <word> [--limit <n>] [--db <file>]");
         Console.WriteLine("  stats kwic <runId> <word> [--limit <n>] [--context <n>] [--db <file>]");
@@ -955,7 +1027,8 @@ public static class Program
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats summary 1");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats books 1");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats word-books 1 alice --limit 25");
-        Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats collocations 1 alice --window 4 --content-only --limit 25");
+        Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats collocations 1 alice --window 4 --content-only --min-count 3 --limit 25");
+        Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats phrases 1 --min-n 2 --max-n 5 --min-count 3 --limit 25");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats words 1 --limit 25");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats words 1 --content-only --limit 25");
         Console.WriteLine("  dotnet run --project src/CorpusLens.Cli -- stats words 1 --function-only --limit 25");
@@ -1035,8 +1108,55 @@ public static class Program
         return parsed;
     }
 
+    private static double? TryReadDoubleOption(CommandLineOptions options, string key)
+    {
+        string? value = options.TryGet(key);
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double parsed))
+        {
+            throw new InvalidOperationException($"Option --{key} must be a number using invariant decimal notation, e.g. 0.02.");
+        }
+
+        return parsed;
+    }
 
 
+
+
+
+    private static bool HasContentWordBoundary(string phrase, IReadOnlyList<string> languageCodes)
+    {
+        string[] words = SplitPhraseWords(phrase);
+        return words.Length > 0
+            && !StopWordProvider.IsStopWord(words[0], languageCodes)
+            && !StopWordProvider.IsStopWord(words[^1], languageCodes);
+    }
+
+    private static string PhraseBoundaryLabel(string phrase, IReadOnlyList<string> languageCodes)
+    {
+        string[] words = SplitPhraseWords(phrase);
+        if (words.Length == 0)
+        {
+            return "empty";
+        }
+
+        return $"{PhraseWordType(words[0], languageCodes)}/{PhraseWordType(words[^1], languageCodes)}";
+    }
+
+    private static string PhraseWordType(string word, IReadOnlyList<string> languageCodes)
+    {
+        return StopWordProvider.IsStopWord(word, languageCodes) ? "function" : "content";
+    }
+
+    private static string[] SplitPhraseWords(string phrase)
+    {
+        return phrase
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    }
 
     private enum CollocationWordFilter
     {
@@ -1071,6 +1191,14 @@ public static class Program
             CollocationWordFilter.FunctionOnly => "function words only",
             _ => "all words"
         };
+    }
+
+    private static IEnumerable<StoredCollocationStatistic> ApplyCollocationThresholds(
+        IEnumerable<StoredCollocationStatistic> collocations,
+        int minCount,
+        double minDice)
+    {
+        return collocations.Where(item => item.Count >= minCount && item.DiceCoefficient >= minDice);
     }
 
     private static IEnumerable<StoredCollocationStatistic> ApplyCollocationFilter(

@@ -8,4 +8,5 @@ public sealed record StoredCollocationStatistic(
     int LeftCount,
     int RightCount,
     double RatePerTarget,
-    double AverageDistance);
+    double AverageDistance,
+    double DiceCoefficient);

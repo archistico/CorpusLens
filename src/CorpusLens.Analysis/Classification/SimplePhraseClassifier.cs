@@ -31,13 +31,13 @@ public sealed class SimplePhraseClassifier
         ArgumentNullException.ThrowIfNull(sentence);
         ArgumentNullException.ThrowIfNull(tokens);
 
-        string text = TrimTrailingClosingPunctuation(sentence.Text);
-        if (text.EndsWith("?", StringComparison.Ordinal) || sentence.Text.Contains("?", StringComparison.Ordinal))
+        char? terminalMark = GetTerminalSentenceMark(sentence.Text);
+        if (terminalMark == '?')
         {
             return PhraseCategory.Question;
         }
 
-        if (text.EndsWith("!", StringComparison.Ordinal) || sentence.Text.Contains("!", StringComparison.Ordinal))
+        if (terminalMark == '!')
         {
             return PhraseCategory.Exclamation;
         }
@@ -65,9 +65,62 @@ public sealed class SimplePhraseClassifier
         return words.Count > 0 ? PhraseCategory.Statement : PhraseCategory.Other;
     }
 
+    private static char? GetTerminalSentenceMark(string text)
+    {
+        string trimmed = TrimTrailingClosingPunctuation(text);
+        if (trimmed.EndsWith("?", StringComparison.Ordinal))
+        {
+            return '?';
+        }
+
+        if (trimmed.EndsWith("!", StringComparison.Ordinal))
+        {
+            return '!';
+        }
+
+        return GetLeadingQuotedSpeechTerminalMark(text);
+    }
+
+    private static char? GetLeadingQuotedSpeechTerminalMark(string text)
+    {
+        string trimmed = text.TrimStart();
+        if (trimmed.Length < 3 || !IsOpeningQuote(trimmed[0]))
+        {
+            return null;
+        }
+
+        char? mark = null;
+        for (int index = 1; index < trimmed.Length; index++)
+        {
+            char current = trimmed[index];
+            if (current == '?' || current == '!')
+            {
+                mark = current;
+                continue;
+            }
+
+            if (mark is not null && IsClosingQuote(current))
+            {
+                return mark;
+            }
+        }
+
+        return null;
+    }
+
     private static string TrimTrailingClosingPunctuation(string text)
     {
         return text.Trim().TrimEnd('"', '\'', '”', '’', '»', ')', ']', '}');
+    }
+
+    private static bool IsOpeningQuote(char value)
+    {
+        return value is '"' or '\'' or '“' or '‘' or '«';
+    }
+
+    private static bool IsClosingQuote(char value)
+    {
+        return value is '"' or '\'' or '”' or '’' or '»';
     }
 
     private static bool ContainsGreeting(IReadOnlyList<string> words)
