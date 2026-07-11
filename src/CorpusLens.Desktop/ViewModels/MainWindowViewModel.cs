@@ -15,6 +15,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     private const int WordExplorerContextLimit = 10;
     private const int WordExplorerContextWords = 8;
     private const int WordExplorerBookLimit = 10;
+    private const int CollocationExplorerDefaultLimit = 30;
 
     private string _databasePath = "No database selected";
     private string _statusMessage = "Ready";
@@ -37,6 +38,11 @@ public sealed class MainWindowViewModel : ViewModelBase
     private string _wordPreviousWords = "Previous words will appear here.";
     private string _wordKwic = "KWIC contexts will appear here.";
     private string _wordBookDistribution = "Book distribution will appear here.";
+    private string _collocationExplorerTitle = "Collocations explorer";
+    private string _collocationExplorerSummary = "Select a run and search collocations.";
+    private string _collocationResults = "Collocations will appear here.";
+    private string _collocationFilterLabel = "Filter: all words";
+    private CollocationExplorerFilter _collocationFilter = CollocationExplorerFilter.All;
 
     public string DatabasePath
     {
@@ -165,6 +171,42 @@ public sealed class MainWindowViewModel : ViewModelBase
     {
         get => _wordBookDistribution;
         private set => SetProperty(ref _wordBookDistribution, value);
+    }
+
+    public string CollocationExplorerTitle
+    {
+        get => _collocationExplorerTitle;
+        private set => SetProperty(ref _collocationExplorerTitle, value);
+    }
+
+    public string CollocationExplorerSummary
+    {
+        get => _collocationExplorerSummary;
+        private set => SetProperty(ref _collocationExplorerSummary, value);
+    }
+
+    public string CollocationResults
+    {
+        get => _collocationResults;
+        private set => SetProperty(ref _collocationResults, value);
+    }
+
+    public string CollocationFilterLabel
+    {
+        get => _collocationFilterLabel;
+        private set => SetProperty(ref _collocationFilterLabel, value);
+    }
+
+    public CollocationExplorerFilter CollocationFilter
+    {
+        get => _collocationFilter;
+        private set
+        {
+            if (SetProperty(ref _collocationFilter, value))
+            {
+                CollocationFilterLabel = $"Filter: {CollocationFilterText(value)}";
+            }
+        }
     }
 
     private void BeginBusy(string message)
@@ -296,6 +338,7 @@ public sealed class MainWindowViewModel : ViewModelBase
             ? "Report: not available"
             : $"Report: {run.ReportPath}";
         ClearWordExplorer("Search a word in the selected run.");
+        ClearCollocationExplorer("Search collocations in the selected run.");
 
         StatusMessage = $"Loading health for run {run.Id}...";
         Task healthTask = LoadHealthAsync(run.Id, cancellationToken);
@@ -476,6 +519,101 @@ public sealed class MainWindowViewModel : ViewModelBase
         WordBookDistribution = "Book distribution will appear here.";
     }
 
+    public void SetCollocationFilter(CollocationExplorerFilter filter)
+    {
+        CollocationFilter = filter;
+    }
+
+    public async Task SearchCollocationsAsync(
+        string? wordText,
+        string? windowText,
+        string? minCountText,
+        string? minDiceText,
+        string? limitText,
+        CancellationToken cancellationToken = default)
+    {
+        string normalizedInput = wordText?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(normalizedInput))
+        {
+            ClearCollocationExplorer("Enter a word to search collocations.");
+            StatusMessage = "Enter a word to search collocations.";
+            return;
+        }
+
+        if (SelectedRun is null)
+        {
+            ClearCollocationExplorer("Select a run before searching collocations.");
+            StatusMessage = "Select a run before searching collocations.";
+            return;
+        }
+
+        int window = ParseIntOrDefault(windowText, 4);
+        int minCount = ParseIntOrDefault(minCountText, 1);
+        int limit = ParseIntOrDefault(limitText, CollocationExplorerDefaultLimit);
+        double minDice = ParseDoubleOrDefault(minDiceText, 0.0);
+
+        try
+        {
+            BeginBusy($"Loading collocations for '{normalizedInput}'...");
+            string databasePath = DatabasePath;
+            long runId = SelectedRun.Id;
+            CollocationExplorerFilter filter = CollocationFilter;
+
+            CollocationExplorerResult result = await Task.Run(async () =>
+            {
+                CollocationExplorerQueryService service = new();
+                return await service.GetCollocationsAsync(new CollocationExplorerRequest(
+                        databasePath,
+                        runId,
+                        normalizedInput,
+                        window,
+                        limit,
+                        minCount,
+                        minDice,
+                        filter),
+                    cancellationToken)
+                    .ConfigureAwait(false);
+            }, cancellationToken).ConfigureAwait(true);
+
+            cancellationToken.ThrowIfCancellationRequested();
+            ApplyCollocationExplorerResult(result);
+            StatusMessage = $"Loaded {result.Collocations.Count:n0} collocation(s) for '{result.Word}'.";
+        }
+        catch (OperationCanceledException)
+        {
+            StatusMessage = "Collocation search cancelled.";
+        }
+        catch (Exception ex)
+        {
+            ClearCollocationExplorer($"Collocation search error: {ex.Message}");
+            StatusMessage = $"Error searching collocations: {ex.Message}";
+        }
+        finally
+        {
+            EndBusy();
+        }
+    }
+
+    private void ApplyCollocationExplorerResult(CollocationExplorerResult result)
+    {
+        CollocationExplorerTitle = $"Collocations — {result.Word}";
+        CollocationExplorerSummary = string.Join(Environment.NewLine,
+            $"Window: {result.Window} words per side",
+            $"{CollocationFilterLabel}",
+            $"Minimum count: {result.MinCount:n0}",
+            $"Minimum Dice: {FormatDouble(result.MinDice)}",
+            $"Matched collocates: {result.MatchedCount:n0}",
+            $"Shown collocates: {result.Collocations.Count:n0} of {result.MatchedCount:n0}");
+        CollocationResults = FormatCollocations(result.Collocations);
+    }
+
+    private void ClearCollocationExplorer(string message)
+    {
+        CollocationExplorerTitle = "Collocations explorer";
+        CollocationExplorerSummary = message;
+        CollocationResults = "Collocations will appear here.";
+    }
+
     private void ClearSelectedRun(string message)
     {
         SelectedRun = null;
@@ -491,6 +629,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         QueryPathSummary = "Query path will appear here.";
         ReportPath = "Report path will appear here.";
         ClearWordExplorer("Select a run and search a word.");
+        ClearCollocationExplorer("Select a run and search collocations.");
     }
 
     private static string FormatCoreMetrics(StoredAnalysisRunSummary run)
@@ -630,6 +769,18 @@ public sealed class MainWindowViewModel : ViewModelBase
         return string.Join(Environment.NewLine, lines);
     }
 
+    private static string FormatCollocations(IReadOnlyList<CollocationExplorerItem> collocations)
+    {
+        if (collocations.Count == 0)
+        {
+            return "No collocations found for the selected filter and thresholds.";
+        }
+
+        IEnumerable<string> lines = collocations.Select((item, index) =>
+            $"{index + 1,2}. {TrimForColumn(item.Collocate, 18),-18} {item.WordType,-8} {item.Count,5:n0}  L {item.LeftCount,4:n0}  R {item.RightCount,4:n0}  {FormatDouble(item.RatePerTarget),6}/t  d {FormatDouble(item.AverageDistance),5}  dice {FormatDouble(item.DiceCoefficient),5}");
+        return string.Join(Environment.NewLine, lines);
+    }
+
     private static string WordTypeLabel(StoredWordStatistic word)
     {
         return word.IsStopWord ? "function" : "content";
@@ -638,6 +789,26 @@ public sealed class MainWindowViewModel : ViewModelBase
     private static string FormatProbability(double value)
     {
         return value.ToString("P2");
+    }
+
+    private static int ParseIntOrDefault(string? value, int fallback)
+    {
+        return int.TryParse(value, out int parsed) ? parsed : fallback;
+    }
+
+    private static double ParseDoubleOrDefault(string? value, double fallback)
+    {
+        return double.TryParse(value, out double parsed) ? parsed : fallback;
+    }
+
+    private static string CollocationFilterText(CollocationExplorerFilter filter)
+    {
+        return filter switch
+        {
+            CollocationExplorerFilter.ContentOnly => "content words only",
+            CollocationExplorerFilter.FunctionOnly => "function words only",
+            _ => "all words"
+        };
     }
 
     private static string FormatLanguageCodes(IReadOnlyList<string> languageCodes)

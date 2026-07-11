@@ -226,3 +226,14 @@ make check
 ### Desktop word explorer
 
 The Avalonia desktop app can search a word in the selected run and show word summary, next/previous words, KWIC contexts and source-book distribution.
+
+
+## Desktop UI
+
+Run the Avalonia desktop shell with:
+
+```powershell
+make desktop
+```
+
+The desktop UI can open an existing `corpuslens.db`, list analysis runs, show a run dashboard, search words, and explore collocations.

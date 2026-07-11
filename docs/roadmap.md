@@ -1334,3 +1334,8 @@ Extended the Avalonia desktop app with a compact run dashboard. Selecting a run 
 ## Milestone 18.4 — Word explorer
 
 Desktop word search panel with summary, next/previous words, KWIC contexts and book distribution.
+
+
+## Milestone 18.5 — Desktop collocations explorer
+
+Adds the first desktop collocations explorer with target word, window, thresholds, all/content/function filters and asynchronous loading. See `docs/milestone-18-5-collocations-explorer.md`.
