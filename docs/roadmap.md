@@ -1285,3 +1285,7 @@ Added persistent `TokenOccurrence` storage and `stats token-index <runId>` for v
 ## Milestone 17.2 — KWIC da token index
 
 `stats kwic` now uses `TokenOccurrence` when a run has a token index, with automatic fallback to the previous chapter-text implementation for legacy runs. Output remains unchanged; only the occurrence lookup path changed.
+
+## Milestone 17.3 — Collocations da token index
+
+`stats collocations` now uses `TokenOccurrence` when a run has a token index, with automatic fallback to the previous chapter-text implementation for legacy runs. Output remains unchanged; the query path now uses persisted token positions and keeps collocation windows inside chapter boundaries.

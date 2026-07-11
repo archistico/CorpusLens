@@ -102,7 +102,7 @@ Token index:
 make stats-token-index RUN=1
 ```
 
-The token index is saved when an analysis run is persisted to SQLite. KWIC uses it when available and falls back to the chapter-text path for legacy runs. Other query migrations will be done incrementally.
+The token index is saved when an analysis run is persisted to SQLite. KWIC and collocations use it when available and fall back to the chapter-text path for legacy runs. Other query migrations will be done incrementally.
 
 Compare runs:
 
@@ -140,7 +140,7 @@ make stats-collocations-content RUN=1 WORD="whale" WINDOW=4 LIMIT=30 MIN_COUNT=3
 make stats-collocations-function RUN=1 WORD="love" WINDOW=4 LIMIT=30 MIN_COUNT=3
 ```
 
-Collocations are ranked with a lightweight Dice score while still showing raw counts. Use `MIN_COUNT` and `MIN_DICE` to hide weak low-frequency matches.
+Collocations are ranked with a lightweight Dice score while still showing raw counts. Use `MIN_COUNT` and `MIN_DICE` to hide weak low-frequency matches. Indexed runs use persisted token positions for the collocation window.
 
 Phrases:
 

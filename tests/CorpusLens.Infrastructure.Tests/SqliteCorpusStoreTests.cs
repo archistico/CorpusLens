@@ -841,6 +841,62 @@ public sealed class SqliteCorpusStoreTests
     }
 
     [Fact]
+    public async Task ListCollocationsAsync_ShouldUseTokenIndexWhenAvailable()
+    {
+        using TestDatabase database = new();
+        string sourceFile = database.CreateSourceFile("alice.epub", "fake epub content");
+        SqliteCorpusStore store = new(database.Path);
+        StoredCorpus corpus = await store.CreateCorpusAsync("English Kids", "en");
+
+        ImportedBook book = new(
+            "alice",
+            "Alice",
+            "Lewis Carroll",
+            "en",
+            sourceFile,
+            new[]
+            {
+                new ImportedChapter(1, "Chapter I", "chapter1.xhtml", string.Empty, "Alice saw white rabbit. Alice followed rabbit.")
+            });
+
+        StoredBookImport storedImport = await store.SaveImportedBookAsync(corpus.Id, book);
+        CorpusAnalysisResult analysis = new(
+            new CorpusSummary(1, 2, 7, 7, 5, 3.5, 5.0),
+            new[]
+            {
+                new WordFrequency("alice", 2, 1, 285714.29, false),
+                new WordFrequency("rabbit", 2, 1, 285714.29, false),
+                new WordFrequency("saw", 1, 1, 142857.14, false),
+                new WordFrequency("white", 1, 1, 142857.14, false),
+                new WordFrequency("followed", 1, 1, 142857.14, false)
+            },
+            Array.Empty<NGramFrequency>(),
+            Array.Empty<NextWordFrequency>(),
+            Array.Empty<AnalyzedSentence>());
+
+        StoredAnalysisRun run = await store.SaveAnalysisRunAsync(
+            corpus.Id,
+            storedImport.Book.Id,
+            new AnalysisSettings(),
+            analysis,
+            "report.md",
+            "words.csv",
+            "ngrams.csv",
+            "next_words.csv",
+            "extracted_text.txt");
+
+        await UpdateChapterCleanTextAsync(database.Path, storedImport.Chapters[0].Id, "This changed chapter text has no target word.");
+
+        IReadOnlyList<StoredCollocationStatistic> collocations = await store.ListCollocationsAsync(run.Id, "alice", window: 2, limit: 10);
+
+        StoredCollocationStatistic rabbit = Assert.Single(collocations, item => item.Collocate == "rabbit");
+        Assert.Equal(2, rabbit.Count);
+        Assert.Equal(1, rabbit.LeftCount);
+        Assert.Equal(1, rabbit.RightCount);
+    }
+
+
+    [Fact]
     public async Task ListCollocationsAsync_ShouldRankCharacteristicCollocatesBeforeFrequentFunctionWords()
     {
         using TestDatabase database = new();
@@ -993,6 +1049,20 @@ public sealed class SqliteCorpusStoreTests
         Assert.Equal(0.3, profile.VeryLongWordShare, precision: 6);
         Assert.Equal(400.0, profile.LexicalDiversityPerThousand, precision: 6);
         Assert.True(profile.HeuristicScore > 0);
+    }
+
+
+    private static async Task UpdateChapterCleanTextAsync(string databasePath, long chapterId, string cleanText)
+    {
+        await using SqliteConnection connection = new($"Data Source={databasePath};Pooling=False");
+        await connection.OpenAsync();
+
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "UPDATE Chapter SET CleanText = $cleanText, CharacterCount = $characterCount WHERE Id = $chapterId;";
+        command.Parameters.AddWithValue("$cleanText", cleanText);
+        command.Parameters.AddWithValue("$characterCount", cleanText.Length);
+        command.Parameters.AddWithValue("$chapterId", chapterId);
+        await command.ExecuteNonQueryAsync();
     }
 
 

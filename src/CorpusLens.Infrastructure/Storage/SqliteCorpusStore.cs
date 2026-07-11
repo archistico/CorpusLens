@@ -694,6 +694,19 @@ public sealed class SqliteCorpusStore
         int safeWindow = Math.Clamp(window, 1, 10);
         int safeLimit = NormalizeLimit(limit);
         string normalizedWord = NormalizeContextWord(word);
+        StoredTokenIndexSummary? tokenIndexSummary = await GetTokenIndexSummaryAsync(analysisRunId, cancellationToken)
+            .ConfigureAwait(false);
+        if (tokenIndexSummary is { TokenCount: > 0 })
+        {
+            return await ListCollocationsFromTokenIndexAsync(
+                    analysisRunId,
+                    normalizedWord,
+                    safeWindow,
+                    safeLimit,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         IReadOnlyList<StoredChapter> chapters = await ListChaptersAsync(run.BookId, cancellationToken)
             .ConfigureAwait(false);
 
@@ -713,21 +726,123 @@ public sealed class SqliteCorpusStore
                 corpusWordCounts);
         }
 
+        return BuildCollocationResult(accumulators.Values, corpusWordCounts, targetCount, safeLimit);
+    }
+
+    private async Task<IReadOnlyList<StoredCollocationStatistic>> ListCollocationsFromTokenIndexAsync(
+        long analysisRunId,
+        string normalizedWord,
+        int window,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        await using SqliteConnection connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await EnableForeignKeysAsync(connection, cancellationToken).ConfigureAwait(false);
+
+        int targetCount = await CountTokenOccurrencesAsync(
+                connection,
+                analysisRunId,
+                normalizedWord,
+                cancellationToken)
+            .ConfigureAwait(false);
         if (targetCount == 0)
         {
             return Array.Empty<StoredCollocationStatistic>();
         }
 
-        return accumulators.Values
-            .Select(item => item.ToStoredStatistic(
-                targetCount,
-                corpusWordCounts.TryGetValue(item.Collocate, out int collocateCount) ? collocateCount : 0))
-            .OrderByDescending(item => item.DiceCoefficient)
-            .ThenByDescending(item => item.Count)
-            .ThenByDescending(item => item.RightCount)
-            .ThenBy(item => item.Collocate, StringComparer.OrdinalIgnoreCase)
-            .Take(safeLimit)
-            .ToArray();
+        Dictionary<string, int> corpusWordCounts = await LoadTokenCorpusCountsAsync(
+                connection,
+                analysisRunId,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        Dictionary<string, CollocationAccumulator> accumulators = new(StringComparer.Ordinal);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT
+                c.NormalizedToken,
+                SUM(CASE WHEN c.ChapterPosition < t.ChapterPosition THEN 1 ELSE 0 END) AS LeftCount,
+                SUM(CASE WHEN c.ChapterPosition > t.ChapterPosition THEN 1 ELSE 0 END) AS RightCount,
+                SUM(ABS(c.ChapterPosition - t.ChapterPosition)) AS DistanceSum
+            FROM TokenOccurrence t
+            INNER JOIN TokenOccurrence c
+                ON c.AnalysisRunId = t.AnalysisRunId
+               AND c.ChapterId = t.ChapterId
+               AND c.ChapterPosition BETWEEN t.ChapterPosition - $window AND t.ChapterPosition + $window
+               AND c.ChapterPosition <> t.ChapterPosition
+            WHERE t.AnalysisRunId = $analysisRunId
+              AND t.NormalizedToken = $normalizedWord
+              AND c.IsWord <> 0
+              AND c.NormalizedToken <> $normalizedWord
+            GROUP BY c.NormalizedToken;
+            """;
+        AddParameter(command, "$analysisRunId", analysisRunId);
+        AddParameter(command, "$normalizedWord", normalizedWord);
+        AddParameter(command, "$window", window);
+
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            string collocate = reader.GetString(0);
+            int leftCount = Convert.ToInt32(reader.GetInt64(1), CultureInfo.InvariantCulture);
+            int rightCount = Convert.ToInt32(reader.GetInt64(2), CultureInfo.InvariantCulture);
+            int distanceSum = Convert.ToInt32(reader.GetInt64(3), CultureInfo.InvariantCulture);
+
+            CollocationAccumulator accumulator = new(analysisRunId, normalizedWord, collocate);
+            accumulator.AddOccurrences(leftCount, rightCount, distanceSum);
+            accumulators.Add(collocate, accumulator);
+        }
+
+        return BuildCollocationResult(accumulators.Values, corpusWordCounts, targetCount, limit);
+    }
+
+    private static async Task<int> CountTokenOccurrencesAsync(
+        SqliteConnection connection,
+        long analysisRunId,
+        string normalizedWord,
+        CancellationToken cancellationToken)
+    {
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(*)
+            FROM TokenOccurrence
+            WHERE AnalysisRunId = $analysisRunId
+              AND NormalizedToken = $normalizedWord
+              AND IsWord <> 0;
+            """;
+        AddParameter(command, "$analysisRunId", analysisRunId);
+        AddParameter(command, "$normalizedWord", normalizedWord);
+
+        object? result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return Convert.ToInt32(result, CultureInfo.InvariantCulture);
+    }
+
+    private static async Task<Dictionary<string, int>> LoadTokenCorpusCountsAsync(
+        SqliteConnection connection,
+        long analysisRunId,
+        CancellationToken cancellationToken)
+    {
+        Dictionary<string, int> counts = new(StringComparer.Ordinal);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT NormalizedToken, COUNT(*)
+            FROM TokenOccurrence
+            WHERE AnalysisRunId = $analysisRunId
+              AND IsWord <> 0
+            GROUP BY NormalizedToken;
+            """;
+        AddParameter(command, "$analysisRunId", analysisRunId);
+
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            counts.Add(
+                reader.GetString(0),
+                Convert.ToInt32(reader.GetInt64(1), CultureInfo.InvariantCulture));
+        }
+
+        return counts;
     }
 
 
@@ -1849,6 +1964,30 @@ public sealed class SqliteCorpusStore
         }
     }
 
+    private static IReadOnlyList<StoredCollocationStatistic> BuildCollocationResult(
+        IEnumerable<CollocationAccumulator> accumulators,
+        IReadOnlyDictionary<string, int> corpusWordCounts,
+        int targetCount,
+        int limit)
+    {
+        if (targetCount == 0)
+        {
+            return Array.Empty<StoredCollocationStatistic>();
+        }
+
+        return accumulators
+            .Select(item => item.ToStoredStatistic(
+                targetCount,
+                corpusWordCounts.TryGetValue(item.Collocate, out int collocateCount) ? collocateCount : 0))
+            .OrderByDescending(item => item.DiceCoefficient)
+            .ThenByDescending(item => item.Count)
+            .ThenByDescending(item => item.RightCount)
+            .ThenBy(item => item.Collocate, StringComparer.OrdinalIgnoreCase)
+            .Take(limit)
+            .ToArray();
+    }
+
+
     private static int AddCollocationsFromChapter(
         long analysisRunId,
         string normalizedWord,
@@ -2379,6 +2518,14 @@ public sealed class SqliteCorpusStore
             {
                 RightCount++;
             }
+        }
+
+        public void AddOccurrences(int leftCount, int rightCount, int distanceSum)
+        {
+            LeftCount += leftCount;
+            RightCount += rightCount;
+            Count += leftCount + rightCount;
+            DistanceSum += distanceSum;
         }
 
         public StoredCollocationStatistic ToStoredStatistic(int targetCount, int collocateCount)
