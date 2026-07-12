@@ -1363,6 +1363,54 @@ public sealed class SqliteCorpusStore
         return runs;
     }
 
+    public async Task<StoredAnalysisRun?> GetAnalysisRunAsync(
+        long analysisRunId,
+        CancellationToken cancellationToken = default)
+    {
+        await InitializeAsync(cancellationToken).ConfigureAwait(false);
+
+        await using SqliteConnection connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await EnableForeignKeysAsync(connection, cancellationToken).ConfigureAwait(false);
+
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT
+                Id,
+                CorpusId,
+                BookId,
+                StartedAt,
+                CompletedAt,
+                Status,
+                EngineVersion,
+                SettingsJson,
+                SentenceCount,
+                TokenCount,
+                WordTokenCount,
+                DistinctWordCount,
+                AverageWordsPerSentence,
+                AverageCharactersPerWord,
+                ReportPath,
+                WordsCsvPath,
+                NGramsCsvPath,
+                NextWordsCsvPath,
+                ExtractedTextPath,
+                ErrorMessage
+            FROM AnalysisRun
+            WHERE Id = $analysisRunId
+            LIMIT 1;
+            """;
+        AddParameter(command, "$analysisRunId", analysisRunId);
+
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        return ReadAnalysisRun(reader);
+    }
+
     public async Task<StoredAnalysisRunSummary?> GetAnalysisRunSummaryAsync(
         long analysisRunId,
         CancellationToken cancellationToken = default)
@@ -2827,6 +2875,31 @@ public sealed class SqliteCorpusStore
             + (veryLongWordShare * 100.0 * 0.8)
             + (contentWordShare * 100.0 * 0.2)
             + (lexicalDiversityPerThousand * 0.08);
+    }
+
+    private static StoredAnalysisRun ReadAnalysisRun(SqliteDataReader reader)
+    {
+        return new StoredAnalysisRun(
+            reader.GetInt64(0),
+            reader.GetInt64(1),
+            reader.GetInt64(2),
+            ParseDateTime(reader.GetString(3)),
+            ParseDateTime(reader.GetString(4)),
+            reader.GetString(5),
+            reader.GetString(6),
+            reader.GetString(7),
+            reader.GetInt32(8),
+            reader.GetInt32(9),
+            reader.GetInt32(10),
+            reader.GetInt32(11),
+            reader.GetDouble(12),
+            reader.GetDouble(13),
+            reader.GetString(14),
+            reader.GetString(15),
+            reader.GetString(16),
+            reader.GetString(17),
+            reader.GetString(18),
+            reader.GetString(19));
     }
 
     private static StoredAnalysisRunSummary ReadAnalysisRunSummary(SqliteDataReader reader)

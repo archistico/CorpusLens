@@ -1,6 +1,6 @@
 # CorpusLens — Roadmap nuove milestone
 
-Versione: 0.5
+Versione: 0.6
 Stato: pianificazione operativa
 Ambito: storico delle milestone implementate e pianificazione dell’evoluzione desktop.
 
@@ -8,7 +8,7 @@ Ambito: storico delle milestone implementate e pianificazione dell’evoluzione 
 
 ## 1. Stato attuale del progetto
 
-La base corrente arriva alla **Milestone 18.11 — N-gram explorer**.
+La base corrente arriva alla **Milestone 18.12 — Report ed export**.
 
 CorpusLens dispone di:
 
@@ -23,10 +23,10 @@ CorpusLens dispone di:
 * indice persistente dei token con fallback per run legacy;
 * persistenza SQLite di corpus, libri, capitoli, run e statistiche;
 * CLI completa per analisi e interrogazione;
-* applicazione desktop Avalonia read-only con apertura database, elenco run, dashboard, Books explorer, Chapters explorer, word explorer, N-gram explorer, collocations explorer, phrase explorer e confronto run;
-* caricamento asincrono delle principali viste desktop, inclusa la navigazione libro → capitoli e le query n-gram.
+* applicazione desktop Avalonia read-only con apertura database, elenco run, dashboard, Books explorer, Chapters explorer, report/export explorer, word explorer, N-gram explorer, collocations explorer, phrase explorer e confronto run;
+* caricamento asincrono delle principali viste desktop, inclusa la navigazione libro → capitoli, le query n-gram e la risoluzione degli artefatti della run.
 
-La prossima fase pianificata copre le Milestone **18.12–18.15**: accesso a report/export, gestione corpus, analisi EPUB dalla UI e distribuzione Windows.
+La prossima fase pianificata copre le Milestone **18.13–18.15**: gestione corpus, analisi EPUB dalla UI e distribuzione Windows.
 
 ---
 
@@ -1351,11 +1351,15 @@ The desktop source-book view now continues into an ordered chapter list and a re
 
 The desktop application now exposes persisted n-gram statistics through a dedicated query service and ViewModel. Users can choose the stored n size, minimum count, exact contained term, content/function composition and ordering, while document counts and frequency per million remain visible. Results are read-only and selectable for copying.
 
+## Milestone 18.12 — Report and export explorer note
+
+The desktop application now resolves the report and export paths stored for the selected run, detects optional EPUB diagnostics, classifies available/missing/not-generated artifacts and opens only verified filesystem targets through the operating system. Path resolution and availability classification remain in the Application layer; process launching is isolated in the Desktop layer.
+
 ---
 
 # Fase 8 — Evoluzione della UI desktop
 
-Le Milestone 18.9–18.11 consolidano la base desktop e completano la navigazione read-only fino al testo dei capitoli e alle statistiche n-gram; le Milestone **18.12–18.15** restano pianificate. L'ordine proposto completa prima l'accesso agli output esistenti e introduce solo in seguito le operazioni di scrittura e l'analisi EPUB dalla UI.
+Le Milestone 18.9–18.12 consolidano la base desktop, completano la navigazione read-only fino al testo dei capitoli e alle statistiche n-gram e rendono accessibili report ed export; le Milestone **18.13–18.15** restano pianificate. Le operazioni di scrittura e l'analisi EPUB dalla UI vengono introdotte solo nelle fasi successive.
 
 ## Milestone 18.9 — Consolidamento architettura Desktop
 
@@ -1434,7 +1438,7 @@ Run → Book → Chapters → Text preview
 
 ### Stato
 
-IMPLEMENTATA — DA VALIDARE CON BUILD E TEST.
+IMPLEMENTATA E VALIDATA — BUILD E TEST SUPERATI.
 
 ### Obiettivo
 
@@ -1471,21 +1475,27 @@ Portare nella UI desktop l'esplorazione di bigrammi, trigrammi e altri n-grammi 
 
 ### Stato
 
-PIANIFICATA.
+IMPLEMENTATA — DA VALIDARE CON BUILD E TEST.
 
 ### Obiettivo
 
 Rendere accessibili dalla UI desktop i report e gli artefatti generati durante l'analisi.
 
-### Funzioni previste
+### Interventi completati
 
-* apertura di `report.md` con l'applicazione predefinita;
+* aggiunto `SqliteCorpusStore.GetAnalysisRunAsync` per leggere tutti i percorsi registrati nella run senza estendere impropriamente il modello riepilogativo;
+* aggiunto `ArtifactExplorerQueryService` con risoluzione dei percorsi assoluti e relativi;
+* risoluzione compatibile con il layout comune `data/corpuslens.db` + `artifacts/...`, oltre al percorso di lavoro corrente e alla cartella del database;
+* elenco di `report.md`, `words.csv`, `ngrams.csv`, `next_words.csv` ed `extracted_text.txt` usando i percorsi persistiti;
+* rilevamento opzionale di `import_diagnostics.md` e `import_failures.csv` nella cartella output risolta;
+* distinzione tra artefatti disponibili, percorsi registrati ma mancanti e artefatti non generati/non registrati;
+* riepilogo della cartella output con indicazione esplicita se non esiste più;
+* apertura del file selezionato con l'applicazione predefinita del sistema operativo;
 * apertura della cartella degli artefatti della run;
-* apertura dei CSV disponibili, tra cui `words.csv`, `ngrams.csv` e `next_words.csv`;
-* apertura di `import_diagnostics.md` e `import_failures.csv`, quando presenti;
-* indicazione chiara dei file mancanti o dei percorsi non più validi;
-* riepilogo degli artefatti disponibili per la run selezionata;
-* nessuna modifica automatica ai file esportati.
+* controlli preventivi che impediscono l'apertura di file o cartelle mancanti;
+* nessuna modifica automatica ai file esportati;
+* caricamento asincrono e cancellabile, con ViewModel e launcher di sistema separati e testabili;
+* test per risoluzione dei percorsi relativi, classificazione della disponibilità, selezione e apertura tramite launcher iniettato.
 
 ### Criteri di accettazione
 
@@ -1493,7 +1503,8 @@ Rendere accessibili dalla UI desktop i report e gli artefatti generati durante l
 * un percorso mancante non causa crash;
 * il sistema distingue tra artefatto non generato e file successivamente rimosso;
 * l'apertura usa le API del sistema operativo in modo sicuro;
-* il comportamento è coperto da test per la risoluzione dei percorsi.
+* il comportamento è coperto da test per la risoluzione dei percorsi;
+* build e test completati senza errori.
 
 ---
 

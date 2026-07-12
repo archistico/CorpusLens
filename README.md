@@ -23,6 +23,7 @@ It is CLI-first, testable, and stores analysis data in SQLite so that corpora ca
 - collocations with content/function filters
 - repeated phrase mining
 - import diagnostics for EPUB folders
+- desktop reports and exports explorer with safe operating-system opening
 
 ## Requirements
 
@@ -31,7 +32,7 @@ It is CLI-first, testable, and stores analysis data in SQLite so that corpora ca
 
 ## Architecture note
 
-CorpusLens keeps analysis and storage logic outside the UI/CLI surfaces. Read-only orchestration for run lists, source books, corpus profiles and health checks lives in `CorpusLens.Application/Queries`, so the CLI and the Avalonia desktop app share the same query services. The desktop layer uses feature-specific ViewModels coordinated by `MainWindowViewModel`; global busy/status state and cancellation are centralized.
+CorpusLens keeps analysis and storage logic outside the UI/CLI surfaces. Read-only orchestration for run lists, source books, corpus profiles, health checks and artifact-path resolution lives in `CorpusLens.Application/Queries`, so the CLI and the Avalonia desktop app share the same query services. The desktop layer uses feature-specific ViewModels coordinated by `MainWindowViewModel`; global busy/status state and cancellation are centralized. Opening a report or export is isolated in the desktop system-path launcher and never mutates the generated file.
 
 ## Project layout
 
@@ -204,7 +205,7 @@ The Avalonia desktop project is available as an early shell:
 make desktop
 ```
 
-The desktop app can open an existing `corpuslens.db`, list runs, select a run, browse its ordered source books and chapters, preview the persisted clean text, and show a compact dashboard with core metrics, language profile, difficulty summary, top content/function words, recurring phrases and token-index health. It also includes an n-gram explorer for bigrams, trigrams and other stored sizes, with minimum-count thresholds, contained-term search, content/function-pattern filters, document counts and selectable sorting. Database and explorer queries run in the background and show a progress indicator so the UI stays responsive. The chapter preview includes character, word and sentence counts, quality warnings, and case-insensitive search with previous/next match navigation. Superseded desktop operations are cancelled, and each explorer is isolated in a testable ViewModel.
+The desktop app can open an existing `corpuslens.db`, list runs, select a run, browse its ordered source books and chapters, preview the persisted clean text, and show a compact dashboard with core metrics, language profile, difficulty summary, top content/function words, recurring phrases and token-index health. It also includes an n-gram explorer for bigrams, trigrams and other stored sizes, with minimum-count thresholds, contained-term search, content/function-pattern filters, document counts and selectable sorting. The Reports and exports panel lists the Markdown report, CSV exports, extracted text and optional EPUB diagnostics, distinguishes missing recorded paths from non-generated artifacts, and can open an existing file or its output folder through the operating system. Database and explorer queries run in the background and show a progress indicator so the UI stays responsive. The chapter preview includes character, word and sentence counts, quality warnings, and case-insensitive search with previous/next match navigation. Superseded desktop operations are cancelled, and each explorer is isolated in a testable ViewModel.
 
 ## Development
 
@@ -228,6 +229,7 @@ make check
 - `docs/milestone-18-9-desktop-architecture-consolidation.md`
 - `docs/milestone-18-10-chapters-explorer.md`
 - `docs/milestone-18-11-ngram-explorer.md`
+- `docs/milestone-18-12-report-export.md`
 
 ### Desktop word explorer
 
@@ -242,7 +244,7 @@ Run the Avalonia desktop shell with:
 make desktop
 ```
 
-The desktop UI can open an existing `corpuslens.db`, list analysis runs, browse source books and their metadata, inspect ordered chapters and persisted clean text, show a run dashboard, search words, explore n-grams, explore collocations, explore recurring phrases, and compare runs.
+The desktop UI can open an existing `corpuslens.db`, list analysis runs, browse source books and their metadata, inspect ordered chapters and persisted clean text, show a run dashboard, inspect and open generated reports/exports, search words, explore n-grams, explore collocations, explore recurring phrases, and compare runs.
 
 ### Desktop compare runs
 
@@ -252,3 +254,8 @@ The Avalonia desktop app includes a Compare runs panel for lexical comparison be
 ### Desktop n-gram explorer
 
 The n-gram panel can browse all stored sizes or focus on bigrams, trigrams, 4-grams or 5-grams. Results can be filtered by minimum count, an exact contained word or phrase, and content/function composition. Ordering is available by raw count, frequency per million, document count or text. The read-only results area supports normal text selection and `Ctrl+C` copying.
+
+
+### Desktop reports and exports
+
+For the selected run, the Reports and exports panel resolves the paths stored in SQLite for `report.md`, `words.csv`, `ngrams.csv`, `next_words.csv` and `extracted_text.txt`. It also discovers `import_diagnostics.md` and `import_failures.csv` in the resolved output directory when present. A recorded path whose file has been removed is shown as **Missing**; an empty or optional unrecorded path is shown as **Not generated**. Only existing files and directories can be opened, and CorpusLens does not edit the exported artifacts.

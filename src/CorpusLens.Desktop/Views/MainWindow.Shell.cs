@@ -34,8 +34,16 @@ public sealed partial class MainWindow
         TextBlock phrasesText = CreateBoundText(viewModel, nameof(MainWindowViewModel.RecurringPhrases), () => viewModel.RecurringPhrases);
         TextBlock tokenIndexText = CreateBoundText(viewModel, nameof(MainWindowViewModel.TokenIndexSummary), () => viewModel.TokenIndexSummary);
         TextBlock queryPathText = CreateBoundText(viewModel, nameof(MainWindowViewModel.QueryPathSummary), () => viewModel.QueryPathSummary);
-        TextBlock reportPathText = CreateBoundText(viewModel, nameof(MainWindowViewModel.ReportPath), () => viewModel.ReportPath);
-        reportPathText.TextWrapping = TextWrapping.Wrap;
+        TextBlock artifactTitleText = CreateBoundText(viewModel, nameof(MainWindowViewModel.ArtifactExplorerTitle), () => viewModel.ArtifactExplorerTitle);
+        artifactTitleText.FontSize = 18;
+        artifactTitleText.FontWeight = FontWeight.SemiBold;
+        TextBlock artifactSummaryText = CreateBoundText(viewModel, nameof(MainWindowViewModel.ArtifactExplorerSummary), () => viewModel.ArtifactExplorerSummary);
+        TextBlock artifactDetailsText = CreateBoundText(viewModel, nameof(MainWindowViewModel.ArtifactDetails), () => viewModel.ArtifactDetails);
+        artifactDetailsText.FontFamily = new FontFamily("Consolas, Cascadia Mono, Menlo, monospace");
+        artifactDetailsText.FontSize = 12;
+        artifactDetailsText.TextWrapping = TextWrapping.Wrap;
+        TextBlock artifactOutputDirectoryText = CreateBoundText(viewModel, nameof(MainWindowViewModel.OutputDirectorySummary), () => viewModel.OutputDirectorySummary);
+        artifactOutputDirectoryText.TextWrapping = TextWrapping.Wrap;
 
         TextBlock booksExplorerTitleText = CreateBoundText(viewModel, nameof(MainWindowViewModel.BooksExplorerTitle), () => viewModel.BooksExplorerTitle);
         booksExplorerTitleText.FontSize = 18;
@@ -130,7 +138,10 @@ public sealed partial class MainWindow
                 phrasesText,
                 tokenIndexText,
                 queryPathText,
-                reportPathText,
+                artifactTitleText,
+                artifactSummaryText,
+                artifactDetailsText,
+                artifactOutputDirectoryText,
                 booksExplorerTitleText,
                 booksExplorerSummaryText,
                 runBookDetailsText,
@@ -316,7 +327,10 @@ public sealed partial class MainWindow
         TextBlock phrasesText,
         TextBlock tokenIndexText,
         TextBlock queryPathText,
-        TextBlock reportPathText,
+        TextBlock artifactTitleText,
+        TextBlock artifactSummaryText,
+        TextBlock artifactDetailsText,
+        TextBlock artifactOutputDirectoryText,
         TextBlock booksExplorerTitleText,
         TextBlock booksExplorerSummaryText,
         TextBlock runBookDetailsText,
@@ -384,23 +398,12 @@ public sealed partial class MainWindow
         lowerCards.Children.Add(BuildCard("Query path", queryPathText, 2));
         stack.Children.Add(lowerCards);
 
-        Border reportCard = new()
-        {
-            Padding = new Thickness(16),
-            BorderBrush = Brushes.LightGray,
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(8),
-            Child = new StackPanel
-            {
-                Spacing = 8,
-                Children =
-                {
-                    new TextBlock { Text = "Report", FontWeight = FontWeight.SemiBold },
-                    reportPathText,
-                },
-            },
-        };
-        stack.Children.Add(reportCard);
+        stack.Children.Add(BuildArtifactExplorer(
+            viewModel,
+            artifactTitleText,
+            artifactSummaryText,
+            artifactDetailsText,
+            artifactOutputDirectoryText));
         stack.Children.Add(BuildBooksExplorer(
             viewModel,
             booksExplorerTitleText,

@@ -1669,3 +1669,19 @@ MainWindowViewModel
 ```
 
 Storage-level filters handle run id, n size, minimum count, exact contained term and deterministic ordering. The Application layer resolves source-book languages and uses `StopWordProvider` to derive `C`/`F` composition patterns and language-aware content/function filters. The Desktop layer owns option state, cancellable loading and presentation only. No n-gram is recomputed or persisted by the explorer.
+
+## Desktop reports and exports explorer
+
+Milestone 18.12 exposes the files already produced by an analysis run without moving filesystem resolution or SQLite access into the Avalonia view:
+
+```text
+MainWindowViewModel
+  -> ArtifactExplorerViewModel
+    -> ArtifactExplorerQueryService
+      -> AnalysisRunQueryService.GetRunAsync
+        -> SqliteCorpusStore.GetAnalysisRunAsync
+```
+
+`StoredAnalysisRun` remains the authoritative source for the report, word CSV, n-gram CSV, next-word CSV and extracted-text paths. The Application query service resolves absolute paths and the relative-path layouts normally produced by the CLI. A non-empty recorded path whose file no longer exists is classified as `Missing`; an empty path is classified as `NotGenerated`. The two EPUB-folder diagnostics are legacy optional artifacts that are discovered by filename in the resolved output directory because their paths are not currently persisted in `AnalysisRun`.
+
+The Desktop layer owns only selection, display state and requests to open a target. `SystemPathLauncher` validates existence, passes the full path directly to `ProcessStartInfo` with `UseShellExecute = true`, and supplies no shell command or user-controlled arguments. Exported files are never rewritten by the explorer.

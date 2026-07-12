@@ -19,6 +19,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         ChaptersExplorerViewModel? chaptersExplorer = null,
         WordExplorerViewModel? wordExplorer = null,
         NGramExplorerViewModel? ngramExplorer = null,
+        ArtifactExplorerViewModel? artifactExplorer = null,
         CollocationsExplorerViewModel? collocationsExplorer = null,
         PhraseExplorerViewModel? phraseExplorer = null,
         CompareRunsViewModel? compareRuns = null,
@@ -30,6 +31,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         ChaptersExplorer = chaptersExplorer ?? new ChaptersExplorerViewModel();
         WordExplorer = wordExplorer ?? new WordExplorerViewModel();
         NGramExplorer = ngramExplorer ?? new NGramExplorerViewModel();
+        ArtifactExplorer = artifactExplorer ?? new ArtifactExplorerViewModel();
         CollocationsExplorer = collocationsExplorer ?? new CollocationsExplorerViewModel();
         PhraseExplorer = phraseExplorer ?? new PhraseExplorerViewModel();
         CompareRuns = compareRuns ?? new CompareRunsViewModel();
@@ -41,6 +43,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         ForwardPropertyChanges(ChaptersExplorer);
         ForwardPropertyChanges(WordExplorer);
         ForwardPropertyChanges(NGramExplorer);
+        ForwardPropertyChanges(ArtifactExplorer);
         ForwardPropertyChanges(CollocationsExplorer);
         ForwardPropertyChanges(PhraseExplorer);
         ForwardPropertyChanges(CompareRuns);
@@ -56,6 +59,8 @@ public sealed class MainWindowViewModel : ViewModelBase
     public WordExplorerViewModel WordExplorer { get; }
 
     public NGramExplorerViewModel NGramExplorer { get; }
+
+    public ArtifactExplorerViewModel ArtifactExplorer { get; }
 
     public CollocationsExplorerViewModel CollocationsExplorer { get; }
 
@@ -76,6 +81,8 @@ public sealed class MainWindowViewModel : ViewModelBase
     public ObservableCollection<RunBookListItemViewModel> RunBooks => Books.RunBooks;
 
     public ObservableCollection<ChapterListItemViewModel> BookChapters => ChaptersExplorer.Chapters;
+
+    public ObservableCollection<ArtifactListItemViewModel> RunArtifacts => ArtifactExplorer.Artifacts;
 
     public RunListItemViewModel? SelectedRun
     {
@@ -162,6 +169,20 @@ public sealed class MainWindowViewModel : ViewModelBase
     public NGramExplorerFilter NGramFilter => NGramExplorer.NGramFilter;
 
     public NGramExplorerSort NGramSort => NGramExplorer.NGramSort;
+
+    public string ArtifactExplorerTitle => ArtifactExplorer.ArtifactExplorerTitle;
+
+    public string ArtifactExplorerSummary => ArtifactExplorer.ArtifactExplorerSummary;
+
+    public string ArtifactDetails => ArtifactExplorer.ArtifactDetails;
+
+    public string OutputDirectorySummary => ArtifactExplorer.OutputDirectorySummary;
+
+    public ArtifactListItemViewModel? SelectedArtifact => ArtifactExplorer.SelectedArtifact;
+
+    public bool CanOpenSelectedArtifact => ArtifactExplorer.CanOpenSelectedArtifact;
+
+    public bool CanOpenOutputDirectory => ArtifactExplorer.CanOpenOutputDirectory;
 
     public string CollocationExplorerTitle => CollocationsExplorer.CollocationExplorerTitle;
 
@@ -504,6 +525,64 @@ public sealed class MainWindowViewModel : ViewModelBase
             cancellationToken).ConfigureAwait(true);
     }
 
+    public void SetSelectedArtifact(ArtifactListItemViewModel? artifact)
+    {
+        ArtifactExplorer.SetSelectedArtifact(artifact);
+    }
+
+    public async Task RefreshArtifactsAsync(CancellationToken cancellationToken = default)
+    {
+        if (SelectedRun is null)
+        {
+            ArtifactExplorer.Clear("Select a run to inspect reports and exports.");
+            OperationState.SetStatus("Select a run before loading artifacts.");
+            return;
+        }
+
+        long runId = SelectedRun.Id;
+        await ExecuteBusyAsync(
+            $"Loading reports and exports for run {runId}...",
+            token => ArtifactExplorer.LoadAsync(DatabasePath, runId, token),
+            "Artifact loading cancelled.",
+            ex => $"Error loading artifacts: {ex.Message}",
+            ex => ArtifactExplorer.Clear($"Could not load reports and exports: {ex.Message}"),
+            cancellationToken).ConfigureAwait(true);
+    }
+
+    public async Task OpenSelectedArtifactAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            string message = await ArtifactExplorer.OpenSelectedAsync(cancellationToken).ConfigureAwait(true);
+            OperationState.SetStatus(message);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            OperationState.SetStatus("Opening the artifact was cancelled.");
+        }
+        catch (Exception ex)
+        {
+            OperationState.SetStatus($"Could not open artifact: {ex.Message}");
+        }
+    }
+
+    public async Task OpenArtifactOutputDirectoryAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            string message = await ArtifactExplorer.OpenOutputDirectoryAsync(cancellationToken).ConfigureAwait(true);
+            OperationState.SetStatus(message);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            OperationState.SetStatus("Opening the output folder was cancelled.");
+        }
+        catch (Exception ex)
+        {
+            OperationState.SetStatus($"Could not open output folder: {ex.Message}");
+        }
+    }
+
     public void SetComparisonRightRun(RunListItemViewModel? run)
     {
         CompareRuns.SetRightRun(run);
@@ -585,6 +664,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         ChaptersExplorer.Clear("Loading chapters after the source books...");
         WordExplorer.Clear("Search a word in the selected run.");
         NGramExplorer.Clear("Search n-grams in the selected run.");
+        ArtifactExplorer.Clear("Loading reports and exports...");
         CollocationsExplorer.Clear("Search collocations in the selected run.");
         PhraseExplorer.Clear("Search phrases in the selected run.");
         CompareRuns.EnsureDefaultRightRun(Runs, runItem);
@@ -592,7 +672,27 @@ public sealed class MainWindowViewModel : ViewModelBase
 
         Task dashboardTask = Dashboard.LoadAsync(DatabasePath, run.Id, cancellationToken);
         Task booksTask = LoadBooksAndChaptersSafelyAsync(DatabasePath, run.Id, cancellationToken);
-        await Task.WhenAll(dashboardTask, booksTask).ConfigureAwait(true);
+        Task artifactsTask = LoadArtifactsSafelyAsync(DatabasePath, run.Id, cancellationToken);
+        await Task.WhenAll(dashboardTask, booksTask, artifactsTask).ConfigureAwait(true);
+    }
+
+    private async Task LoadArtifactsSafelyAsync(
+        string databasePath,
+        long runId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await ArtifactExplorer.LoadAsync(databasePath, runId, cancellationToken).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            ArtifactExplorer.Clear($"Could not load reports and exports: {ex.Message}");
+        }
     }
 
     private async Task LoadBooksAndChaptersSafelyAsync(
@@ -646,6 +746,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         ChaptersExplorer.Clear("Select a source book to inspect its chapters.");
         WordExplorer.Clear("Select a run and search a word.");
         NGramExplorer.Clear("Select a run and search n-grams.");
+        ArtifactExplorer.Clear("Select a run to inspect reports and exports.");
         CollocationsExplorer.Clear("Select a run and search collocations.");
         PhraseExplorer.Clear("Select a run and search phrases.");
         CompareRuns.EnsureDefaultRightRun(Runs, null);

@@ -394,6 +394,173 @@ public sealed class DesktopViewModelTests
         }
     }
 
+    [Fact]
+    public async Task ArtifactExplorerQueryService_ResolvesRelativePathsAndClassifiesAvailability()
+    {
+        string projectDirectory = Path.Combine(
+            Path.GetTempPath(),
+            $"corpuslens-artifacts-{Guid.NewGuid():N}");
+        string dataDirectory = Path.Combine(projectDirectory, "data");
+        string artifactDirectory = Path.Combine(projectDirectory, "artifacts", "run-1");
+        Directory.CreateDirectory(dataDirectory);
+        Directory.CreateDirectory(artifactDirectory);
+
+        try
+        {
+            string databasePath = Path.Combine(dataDirectory, "corpuslens.db");
+            string sourcePath = Path.Combine(projectDirectory, "book.epub");
+            await File.WriteAllTextAsync(sourcePath, "fake epub content");
+            await File.WriteAllTextAsync(Path.Combine(artifactDirectory, "report.md"), "# Report");
+            await File.WriteAllTextAsync(Path.Combine(artifactDirectory, "next_words.csv"), "word,next_word");
+            await File.WriteAllTextAsync(Path.Combine(artifactDirectory, "import_diagnostics.md"), "# Diagnostics");
+
+            SqliteCorpusStore store = new(databasePath);
+            StoredCorpus corpus = await store.CreateCorpusAsync("Test corpus", "en");
+            ImportedBook book = new(
+                "book-1",
+                "Test book",
+                "Test author",
+                "en",
+                sourcePath,
+                new[]
+                {
+                    new ImportedChapter(
+                        1,
+                        "Chapter one",
+                        "chapter-1.xhtml",
+                        string.Empty,
+                        "One short chapter."),
+                });
+            StoredBookImport storedBook = await store.SaveImportedBookAsync(corpus.Id, book);
+            CorpusAnalysisResult analysis = new(
+                new CorpusSummary(1, 1, 3, 3, 3, 3.0, 4.0),
+                Array.Empty<WordFrequency>(),
+                Array.Empty<NGramFrequency>(),
+                Array.Empty<NextWordFrequency>(),
+                Array.Empty<AnalyzedSentence>());
+            string relativeOutput = Path.Combine("artifacts", "run-1");
+            StoredAnalysisRun run = await store.SaveAnalysisRunAsync(
+                corpus.Id,
+                storedBook.Book.Id,
+                new AnalysisSettings(),
+                analysis,
+                Path.Combine(relativeOutput, "report.md"),
+                Path.Combine(relativeOutput, "words.csv"),
+                string.Empty,
+                Path.Combine(relativeOutput, "next_words.csv"),
+                string.Empty);
+
+            ArtifactExplorerQueryService service = new();
+            ArtifactExplorerResult result = await service.GetArtifactsAsync(
+                new ArtifactExplorerRequest(databasePath, run.Id));
+
+            Assert.Equal(Path.GetFullPath(artifactDirectory), Path.GetFullPath(result.OutputDirectory));
+            Assert.True(result.OutputDirectoryExists);
+            Assert.Equal(3, result.AvailableCount);
+            Assert.Equal(1, result.MissingCount);
+            Assert.Equal(3, result.NotGeneratedCount);
+
+            ArtifactExplorerItem report = result.Artifacts.Single(item => item.Id == "report");
+            Assert.Equal(ArtifactAvailability.Available, report.Availability);
+            Assert.Equal(
+                Path.GetFullPath(Path.Combine(artifactDirectory, "report.md")),
+                Path.GetFullPath(report.ResolvedPath));
+
+            ArtifactExplorerItem words = result.Artifacts.Single(item => item.Id == "words");
+            Assert.Equal(ArtifactAvailability.Missing, words.Availability);
+            Assert.True(words.IsPathRecorded);
+            Assert.Equal(
+                Path.GetFullPath(Path.Combine(artifactDirectory, "words.csv")),
+                Path.GetFullPath(words.ResolvedPath));
+
+            ArtifactExplorerItem ngrams = result.Artifacts.Single(item => item.Id == "ngrams");
+            Assert.Equal(ArtifactAvailability.NotGenerated, ngrams.Availability);
+            Assert.False(ngrams.IsPathRecorded);
+
+            ArtifactExplorerItem diagnostics = result.Artifacts.Single(
+                item => item.Id == "import-diagnostics");
+            Assert.Equal(ArtifactAvailability.Available, diagnostics.Availability);
+            Assert.True(diagnostics.IsOptional);
+        }
+        finally
+        {
+            Directory.Delete(projectDirectory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ArtifactExplorer_LoadsSelectsAndOpensOnlyAvailableTargets()
+    {
+        List<(string Path, bool IsDirectory)> openedTargets = new();
+        ArtifactExplorerResult result = new(
+            12,
+            Path.GetFullPath("artifacts/run-12"),
+            true,
+            new[]
+            {
+                new ArtifactExplorerItem(
+                    "report",
+                    "Markdown report",
+                    "report.md",
+                    "report.md",
+                    Path.GetFullPath("artifacts/run-12/report.md"),
+                    ArtifactAvailability.Available,
+                    false,
+                    true),
+                new ArtifactExplorerItem(
+                    "words",
+                    "Word frequencies CSV",
+                    "words.csv",
+                    "words.csv",
+                    Path.GetFullPath("artifacts/run-12/words.csv"),
+                    ArtifactAvailability.Missing,
+                    false,
+                    true),
+            });
+        ArtifactExplorerViewModel viewModel = new(
+            (_, _) => Task.FromResult(result),
+            (path, isDirectory, _) =>
+            {
+                openedTargets.Add((path, isDirectory));
+                return Task.CompletedTask;
+            });
+
+        string loadStatus = await viewModel.LoadAsync("corpuslens.db", 12);
+
+        Assert.Equal("Loaded 2 artifact entries.", loadStatus);
+        Assert.Equal(2, viewModel.Artifacts.Count);
+        Assert.NotNull(viewModel.SelectedArtifact);
+        Assert.Equal("report", viewModel.SelectedArtifact!.Artifact.Id);
+        Assert.True(viewModel.CanOpenSelectedArtifact);
+        Assert.True(viewModel.CanOpenOutputDirectory);
+        Assert.Contains("Available: 1", viewModel.ArtifactExplorerSummary);
+
+        string openStatus = await viewModel.OpenSelectedAsync();
+        string folderStatus = await viewModel.OpenOutputDirectoryAsync();
+
+        Assert.Equal("Opened Markdown report.", openStatus);
+        Assert.Equal("Opened the run output folder.", folderStatus);
+        Assert.Collection(
+            openedTargets,
+            target =>
+            {
+                Assert.False(target.IsDirectory);
+                Assert.EndsWith("report.md", target.Path, StringComparison.OrdinalIgnoreCase);
+            },
+            target =>
+            {
+                Assert.True(target.IsDirectory);
+                Assert.Equal(result.OutputDirectory, target.Path);
+            });
+
+        viewModel.SetSelectedArtifact(viewModel.Artifacts[1]);
+        string missingStatus = await viewModel.OpenSelectedAsync();
+
+        Assert.False(viewModel.CanOpenSelectedArtifact);
+        Assert.Contains("recorded file is missing", missingStatus);
+        Assert.Equal(2, openedTargets.Count);
+    }
+
     private static ChapterExplorerItem CreateChapter(
         long id,
         int orderIndex,

@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("CorpusLens.Domain")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+a9c6cfff664e6d6c8e8f17ba825d4080030a36b5")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+70ac04499bd7f1a13852af9eced8714487398c6a")]
 [assembly: System.Reflection.AssemblyProductAttribute("CorpusLens.Domain")]
 [assembly: System.Reflection.AssemblyTitleAttribute("CorpusLens.Domain")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

@@ -27,6 +27,13 @@ public sealed class AnalysisRunQueryService
         return _store.GetAnalysisRunSummaryAsync(analysisRunId, cancellationToken);
     }
 
+    public Task<StoredAnalysisRun?> GetRunAsync(
+        long analysisRunId,
+        CancellationToken cancellationToken = default)
+    {
+        return _store.GetAnalysisRunAsync(analysisRunId, cancellationToken);
+    }
+
     public Task<IReadOnlyList<StoredAnalysisRunBook>> ListRunBooksAsync(
         long analysisRunId,
         CancellationToken cancellationToken = default)
