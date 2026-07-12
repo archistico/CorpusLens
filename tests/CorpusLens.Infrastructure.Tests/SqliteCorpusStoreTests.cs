@@ -75,6 +75,44 @@ public sealed class SqliteCorpusStoreTests
     }
 
     [Fact]
+    public async Task DeleteBooksAsync_ShouldCascadeAnalysisRunCleanup()
+    {
+        using TestDatabase database = new();
+        string sourceFile = database.CreateSourceFile("cleanup.epub", "fake epub content");
+        SqliteCorpusStore store = new(database.Path);
+        StoredCorpus corpus = await store.CreateCorpusAsync("Cleanup corpus", "en");
+        ImportedBook book = new(
+            "cleanup-book",
+            "Cleanup book",
+            string.Empty,
+            "en",
+            sourceFile,
+            new[] { new ImportedChapter(1, "One", "one.xhtml", string.Empty, "Some text here.") });
+        StoredBookImport storedImport = await store.SaveImportedBookAsync(corpus.Id, book);
+        CorpusAnalysisResult analysis = new(
+            new CorpusSummary(1, 1, 3, 3, 3, 3.0, 4.0),
+            Array.Empty<WordFrequency>(),
+            Array.Empty<NGramFrequency>(),
+            Array.Empty<NextWordFrequency>(),
+            Array.Empty<AnalyzedSentence>());
+        StoredAnalysisRun run = await store.SaveAnalysisRunAsync(
+            corpus.Id,
+            storedImport.Book.Id,
+            new AnalysisSettings(),
+            analysis,
+            "report.md",
+            "words.csv",
+            "ngrams.csv",
+            "next_words.csv",
+            "extracted_text.txt");
+
+        await store.DeleteBooksAsync(new[] { storedImport.Book.Id });
+
+        Assert.Null(await store.GetAnalysisRunAsync(run.Id));
+        Assert.Empty(await store.ListChaptersAsync(storedImport.Book.Id));
+    }
+
+    [Fact]
     public async Task SaveAnalysisRunAsync_ShouldPersistSummaryAndReportPaths()
     {
         using TestDatabase database = new();

@@ -38,18 +38,23 @@ public sealed class AnalyzeEpubFolderUseCase
 
     public async Task<AnalyzeEpubFolderResult> ExecuteAsync(
         AnalyzeEpubFolderRequest request,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IProgress<EpubAnalysisProgress>? progress = null)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.FolderPath);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.OutputDirectory);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.SearchPattern);
 
+        Report(progress, EpubAnalysisStage.Validating, 0, "Validating EPUB analysis parameters...");
+        cancellationToken.ThrowIfCancellationRequested();
+
         if (!Directory.Exists(request.FolderPath))
         {
             throw new DirectoryNotFoundException($"EPUB folder not found: {request.FolderPath}");
         }
 
+        Report(progress, EpubAnalysisStage.DiscoveringFiles, 2, "Scanning the selected folder for EPUB files...");
         SearchOption searchOption = request.Recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
         IReadOnlyList<string> epubFiles = Directory
             .EnumerateFiles(request.FolderPath, request.SearchPattern, searchOption)
@@ -62,10 +67,30 @@ public sealed class AnalyzeEpubFolderUseCase
             throw new InvalidOperationException($"No EPUB files found in folder: {request.FolderPath}");
         }
 
+        Report(
+            progress,
+            EpubAnalysisStage.DiscoveringFiles,
+            5,
+            $"Found {epubFiles.Count:n0} EPUB file(s).",
+            totalFiles: epubFiles.Count);
+
         List<ImportedBook> books = new();
         List<EpubImportFailure> failures = new();
-        foreach (string epubFile in epubFiles)
+        for (int index = 0; index < epubFiles.Count; index++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            string epubFile = epubFiles[index];
+            int beforePercent = 5 + (int)Math.Round(index * 45.0 / epubFiles.Count, MidpointRounding.AwayFromZero);
+            Report(
+                progress,
+                EpubAnalysisStage.ImportingBooks,
+                beforePercent,
+                $"Importing {Path.GetFileName(epubFile)} ({index + 1:n0}/{epubFiles.Count:n0})...",
+                index,
+                epubFiles.Count,
+                books.Count,
+                failures.Count);
+
             try
             {
                 ImportedBook book = await _bookReader
@@ -81,6 +106,18 @@ public sealed class AnalyzeEpubFolderUseCase
                     exception.Message,
                     exception.GetType().Name));
             }
+
+            int completed = index + 1;
+            int afterPercent = 5 + (int)Math.Round(completed * 45.0 / epubFiles.Count, MidpointRounding.AwayFromZero);
+            Report(
+                progress,
+                EpubAnalysisStage.ImportingBooks,
+                afterPercent,
+                $"Processed {completed:n0}/{epubFiles.Count:n0} EPUB file(s): {books.Count:n0} imported, {failures.Count:n0} skipped.",
+                completed,
+                epubFiles.Count,
+                books.Count,
+                failures.Count);
         }
 
         if (books.Count == 0)
@@ -92,13 +129,34 @@ public sealed class AnalyzeEpubFolderUseCase
             throw new InvalidOperationException($"No valid EPUB files could be imported from folder: {request.FolderPath}{Environment.NewLine}{failureSummary}");
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
+        Report(
+            progress,
+            EpubAnalysisStage.AnalyzingCorpus,
+            55,
+            $"Analyzing {books.Count:n0} imported book(s)...",
+            epubFiles.Count,
+            epubFiles.Count,
+            books.Count,
+            failures.Count);
+
         IReadOnlyList<TextDocument> documents = books
             .Select(book => new TextDocument(book.Id, book.Title, book.LanguageCode, book.Content))
             .ToArray();
 
         CorpusAnalysisResult analysis = _analyzer.Analyze(documents, request.Settings);
+        cancellationToken.ThrowIfCancellationRequested();
         ImportedBook aggregateBook = BuildAggregateBook(request.FolderPath, request.LanguageCode, books);
 
+        Report(
+            progress,
+            EpubAnalysisStage.WritingArtifacts,
+            68,
+            "Writing extracted text and analysis artifacts...",
+            epubFiles.Count,
+            epubFiles.Count,
+            books.Count,
+            failures.Count);
         Directory.CreateDirectory(request.OutputDirectory);
 
         string extractedTextPath = Path.Combine(request.OutputDirectory, "extracted_text.txt");
@@ -106,10 +164,12 @@ public sealed class AnalyzeEpubFolderUseCase
 
         string title = $"EPUB folder: {Path.GetFileName(Path.GetFullPath(request.FolderPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))} ({books.Count} books)";
         string reportPath = Path.Combine(request.OutputDirectory, "report.md");
+        Report(progress, EpubAnalysisStage.WritingArtifacts, 76, "Writing Markdown report...", epubFiles.Count, epubFiles.Count, books.Count, failures.Count);
         await _markdownReportWriter
             .WriteAsync(analysis, reportPath, title, cancellationToken)
             .ConfigureAwait(false);
 
+        Report(progress, EpubAnalysisStage.WritingArtifacts, 84, "Writing CSV exports...", epubFiles.Count, epubFiles.Count, books.Count, failures.Count);
         await _csvReportWriter
             .WriteAsync(analysis, request.OutputDirectory, cancellationToken)
             .ConfigureAwait(false);
@@ -118,9 +178,20 @@ public sealed class AnalyzeEpubFolderUseCase
         await WriteImportFailuresAsync(failures, importFailuresCsvPath, cancellationToken).ConfigureAwait(false);
 
         string importDiagnosticsPath = Path.Combine(request.OutputDirectory, "import_diagnostics.md");
+        Report(progress, EpubAnalysisStage.WritingArtifacts, 92, "Writing EPUB import diagnostics...", epubFiles.Count, epubFiles.Count, books.Count, failures.Count);
         await _importDiagnosticsWriter
             .WriteAsync(books, failures, importDiagnosticsPath, cancellationToken)
             .ConfigureAwait(false);
+
+        Report(
+            progress,
+            EpubAnalysisStage.Completed,
+            100,
+            $"Analysis complete: {books.Count:n0} imported, {failures.Count:n0} skipped.",
+            epubFiles.Count,
+            epubFiles.Count,
+            books.Count,
+            failures.Count);
 
         return new AnalyzeEpubFolderResult(
             aggregateBook,
@@ -134,6 +205,26 @@ public sealed class AnalyzeEpubFolderUseCase
             extractedTextPath,
             importFailuresCsvPath,
             importDiagnosticsPath);
+    }
+
+    private static void Report(
+        IProgress<EpubAnalysisProgress>? progress,
+        EpubAnalysisStage stage,
+        int percent,
+        string message,
+        int completedFiles = 0,
+        int totalFiles = 0,
+        int importedFiles = 0,
+        int failedFiles = 0)
+    {
+        progress?.Report(new EpubAnalysisProgress(
+            stage,
+            Math.Clamp(percent, 0, 100),
+            message,
+            completedFiles,
+            totalFiles,
+            importedFiles,
+            failedFiles));
     }
 
     private static ImportedBook BuildAggregateBook(string folderPath, string languageCode, IReadOnlyList<ImportedBook> books)

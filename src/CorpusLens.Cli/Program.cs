@@ -1399,14 +1399,7 @@ public static class Program
 
     private static AnalysisSettings DefaultSettings()
     {
-        return new AnalysisSettings
-        {
-            NGramMinN = 2,
-            NGramMaxN = 5,
-            MinNGramCount = 2,
-            TopWordsForNextWordAnalysis = 1000,
-            MinNextWordPairCount = 2
-        };
+        return EpubAnalysisDefaults.CreateSettings();
     }
 
     private static string DefaultDatabasePath()

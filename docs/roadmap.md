@@ -8,7 +8,7 @@ Ambito: storico delle milestone implementate e pianificazione dell’evoluzione 
 
 ## 1. Stato attuale del progetto
 
-La base corrente arriva alla **Milestone 18.12 — Report ed export**.
+La base corrente arriva alla **Milestone 18.14 — Analisi EPUB dalla UI**.
 
 CorpusLens dispone di:
 
@@ -23,10 +23,10 @@ CorpusLens dispone di:
 * indice persistente dei token con fallback per run legacy;
 * persistenza SQLite di corpus, libri, capitoli, run e statistiche;
 * CLI completa per analisi e interrogazione;
-* applicazione desktop Avalonia con apertura database, gestione corpus, filtro run, dashboard, Books explorer, Chapters explorer, report/export explorer, word explorer, N-gram explorer, collocations explorer, phrase explorer e confronto run;
-* caricamento asincrono delle principali viste desktop, inclusa la navigazione libro → capitoli, le query n-gram e la risoluzione degli artefatti della run.
+* applicazione desktop Avalonia con apertura database, gestione corpus, analisi di cartelle EPUB, filtro run, dashboard, Books explorer, Chapters explorer, report/export explorer, word explorer, N-gram explorer, collocations explorer, phrase explorer e confronto run;
+* caricamento asincrono delle principali viste desktop e della pipeline EPUB, con avanzamento, annullamento cooperativo e selezione automatica della nuova run.
 
-La prossima fase pianificata copre le Milestone **18.14–18.15**: analisi EPUB dalla UI e distribuzione Windows. La gestione corpus della Milestone 18.13 è implementata e in attesa di validazione finale.
+La prossima fase pianificata è la **Milestone 18.15 — Stabilizzazione e distribuzione**. La gestione corpus della Milestone 18.13 è validata; l’analisi EPUB desktop della Milestone 18.14 è implementata e attende la verifica finale con build e test.
 
 ---
 
@@ -1512,7 +1512,7 @@ Rendere accessibili dalla UI desktop i report e gli artefatti generati durante l
 
 ### Stato
 
-IMPLEMENTATA — DA VALIDARE CON BUILD E TEST.
+IMPLEMENTATA E VALIDATA — BUILD E TEST SUPERATI.
 
 ### Obiettivo
 
@@ -1554,34 +1554,42 @@ Passare dalla sola consultazione delle run esistenti alla gestione dei corpus da
 
 ### Stato
 
-PIANIFICATA.
+IMPLEMENTATA — DA VALIDARE CON BUILD E TEST.
 
 ### Obiettivo
 
 Consentire l'avvio completo di una nuova analisi EPUB dal desktop, mantenendo la CLI come superficie supportata e riutilizzando la stessa pipeline applicativa.
 
-### Funzioni previste
+### Interventi completati
 
-* selezione di una cartella contenente EPUB;
-* scelta del corpus e della lingua;
-* scelta della cartella di output;
-* opzione per la scansione ricorsiva;
-* validazione preventiva di percorsi e parametri;
-* avvio asincrono dell'analisi;
-* avanzamento, fase corrente e messaggi di stato;
-* annullamento cooperativo;
-* riepilogo di file importati, saltati e falliti;
-* collegamento ai diagnostici di importazione;
-* aggiornamento automatico della lista run e selezione della nuova run al termine.
+* aggiunto `EpubAnalysisViewModel`, isolato e testabile, per validazione, avanzamento, riepilogo e apertura dei diagnostici;
+* selezione della cartella EPUB e della cartella di output mediante il provider di storage Avalonia;
+* utilizzo obbligatorio di un corpus specifico, con lingua derivata dal corpus e verificata nuovamente nell'Application layer;
+* supporto alla scansione ricorsiva e controllo preventivo della presenza di file `.epub`;
+* conferma esplicita prima della creazione di artefatti e dati persistenti;
+* riuso di `AnalyzeEpubFolderAndSaveUseCase`, quindi stessa pipeline di importazione, analisi, report e persistenza usata dalla CLI;
+* centralizzazione delle impostazioni standard in `EpubAnalysisDefaults`, condivisa tra CLI e Desktop;
+* aggiunto `EpubAnalysisProgress` con fase, percentuale, file elaborati, importati e falliti;
+* avanzamento dettagliato per scansione, import, analisi, scrittura artefatti, persistenza statistiche e costruzione indice token;
+* esecuzione asincrona con annullamento cooperativo e finestra reattiva;
+* politica di skip invariata per EPUB singoli non validi;
+* pulizia compensativa dei libri appena inseriti se la persistenza viene annullata o fallisce, sfruttando le cancellazioni a cascata SQLite per eliminare run e statistiche parziali;
+* riepilogo finale con run, corpus, file importati/falliti, capitoli, token e percorso output;
+* pulsanti per aprire cartella output, `import_diagnostics.md` e `import_failures.csv`;
+* ricaricamento automatico di corpus e run e selezione della nuova run completata;
+* aggiunti test per validazione richiesta, avanzamento/riepilogo e pulizia a cascata dei dati persistiti.
 
 ### Criteri di accettazione
 
 * un'analisi completa può essere avviata e completata senza terminale;
 * la finestra resta reattiva durante l'elaborazione;
-* l'annullamento non lascia run o dati parziali incoerenti;
+* l'annullamento prima del completamento non conserva run o libri parziali nel database;
+* gli artefatti filesystem già scritti possono restare nella cartella output dopo un annullamento e sono chiaramente separati dalla consistenza del database;
 * errori su singoli EPUB rispettano la politica di skip già adottata dalla CLI;
-* CLI e Desktop usano la stessa pipeline applicativa;
-* la nuova run è immediatamente esplorabile nella dashboard.
+* CLI e Desktop usano la stessa pipeline e le stesse impostazioni standard;
+* diagnostici e conteggi dei file saltati sono accessibili dalla UI;
+* la nuova run è ricaricata, selezionata e immediatamente esplorabile nella dashboard;
+* build e test completati senza errori.
 
 ---
 

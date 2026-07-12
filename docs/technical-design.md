@@ -1705,3 +1705,25 @@ The Desktop layer never opens a SQLite connection and never constructs SQL. It o
 The run list loaded by `MainWindowViewModel` remains the common source for dashboard and comparison features. `VisibleRuns` is a filtered presentation collection based on the selected corpus; `Runs` keeps the complete loaded set so cross-corpus comparison remains available. The selected corpus language is exposed through `IsSelectedCorpusLanguageCompatible` and becomes the language constraint used by the EPUB-analysis workflow in Milestone 18.14.
 
 Corpus renaming is deliberately excluded from this milestone. Creation is append-only, existing corpus identities are stable, and no migration or update policy is introduced before the analysis workflow is complete.
+
+
+## Desktop EPUB analysis
+
+Milestone 18.14 adds the first complete long-running analysis workflow to the Avalonia application while preserving the established dependency direction:
+
+```text
+MainWindow
+  -> MainWindowViewModel
+    -> EpubAnalysisViewModel
+      -> AnalyzeEpubFolderAndSaveUseCase
+        -> AnalyzeEpubFolderUseCase
+        -> SqliteCorpusStore
+```
+
+The Desktop layer performs folder picking, explicit confirmation, progress presentation and safe opening of generated paths. The Application layer validates the persisted corpus language and remains the only orchestration surface for import, analysis, artifact generation and persistence. CLI and Desktop share `EpubAnalysisDefaults`, `AnalyzeEpubFolderUseCase` and `AnalyzeEpubFolderAndSaveUseCase`.
+
+`EpubAnalysisProgress` is a stable progress contract with stage, percentage and EPUB counters. The save use case scales import/artifact progress into the first part of the operation and reserves the final range for books, statistics, run-book links and the source-book token index.
+
+Database writes begin only after EPUB extraction and artifact generation succeed. The save use case tracks every new aggregate/source book id. On cancellation or failure, `SqliteCorpusStore.DeleteBooksAsync` removes those ids transactionally; foreign-key cascades remove dependent chapters, run rows, statistics, links and token occurrences. Files already emitted to the chosen output folder are not deleted by compensation.
+
+After success, `MainWindowViewModel` reloads the common run collection, keeps the selected corpus and invokes the normal run-selection pipeline for the new run id. No special dashboard or explorer loading path is introduced.

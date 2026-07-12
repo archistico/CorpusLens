@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using CorpusLens.Application.EpubAnalysis;
 using CorpusLens.Application.Queries;
 using CorpusLens.Application.Storage;
 using CorpusLens.Domain.Storage;
@@ -25,6 +26,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         PhraseExplorerViewModel? phraseExplorer = null,
         CompareRunsViewModel? compareRuns = null,
         CorpusManagementViewModel? corpora = null,
+        EpubAnalysisViewModel? epubAnalysis = null,
         DesktopOperationStateViewModel? operationState = null,
         Func<string, CancellationToken, Task<IReadOnlyList<StoredAnalysisRunSummary>>>? runLoader = null)
     {
@@ -38,6 +40,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         PhraseExplorer = phraseExplorer ?? new PhraseExplorerViewModel();
         CompareRuns = compareRuns ?? new CompareRunsViewModel();
         Corpora = corpora ?? new CorpusManagementViewModel();
+        EpubAnalysis = epubAnalysis ?? new EpubAnalysisViewModel();
         OperationState = operationState ?? new DesktopOperationStateViewModel();
         _runLoader = runLoader ?? LoadRunsFromApplicationAsync;
 
@@ -51,6 +54,39 @@ public sealed class MainWindowViewModel : ViewModelBase
         ForwardPropertyChanges(PhraseExplorer);
         ForwardPropertyChanges(CompareRuns);
         ForwardPropertyChanges(Corpora);
+        ForwardPropertyChanges(EpubAnalysis);
+        EpubAnalysis.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(EpubAnalysisViewModel.ProgressPercent))
+            {
+                OnPropertyChanged(nameof(EpubAnalysisProgressPercent));
+            }
+
+            if (args.PropertyName == nameof(EpubAnalysisViewModel.ProgressSummary))
+            {
+                OnPropertyChanged(nameof(EpubAnalysisProgressSummary));
+            }
+
+            if (args.PropertyName == nameof(EpubAnalysisViewModel.ResultSummary))
+            {
+                OnPropertyChanged(nameof(EpubAnalysisResultSummary));
+            }
+
+            if (args.PropertyName == nameof(EpubAnalysisViewModel.CanOpenOutputDirectory))
+            {
+                OnPropertyChanged(nameof(CanOpenLatestAnalysisOutput));
+            }
+
+            if (args.PropertyName == nameof(EpubAnalysisViewModel.CanOpenDiagnostics))
+            {
+                OnPropertyChanged(nameof(CanOpenLatestAnalysisDiagnostics));
+            }
+
+            if (args.PropertyName == nameof(EpubAnalysisViewModel.CanOpenFailures))
+            {
+                OnPropertyChanged(nameof(CanOpenLatestAnalysisFailures));
+            }
+        };
         Corpora.PropertyChanged += (_, args) =>
         {
             if (args.PropertyName == nameof(CorpusManagementViewModel.Summary))
@@ -61,6 +97,11 @@ public sealed class MainWindowViewModel : ViewModelBase
             if (args.PropertyName == nameof(CorpusManagementViewModel.Details))
             {
                 OnPropertyChanged(nameof(CorpusDetails));
+            }
+
+            if (args.PropertyName == nameof(CorpusManagementViewModel.SelectedCorpus))
+            {
+                OnPropertyChanged(nameof(EpubAnalysisCorpusSummary));
             }
         };
         ForwardPropertyChanges(OperationState);
@@ -85,6 +126,8 @@ public sealed class MainWindowViewModel : ViewModelBase
     public CompareRunsViewModel CompareRuns { get; }
 
     public CorpusManagementViewModel Corpora { get; }
+
+    public EpubAnalysisViewModel EpubAnalysis { get; }
 
     public DesktopOperationStateViewModel OperationState { get; }
 
@@ -125,6 +168,22 @@ public sealed class MainWindowViewModel : ViewModelBase
     public IReadOnlyList<CorpusLanguageOption> SupportedCorpusLanguages => Corpora.SupportedLanguages;
 
     public CorpusLanguageOption? DefaultCorpusLanguage => Corpora.DefaultLanguage;
+
+    public string EpubAnalysisCorpusSummary => SelectedCorpus?.Corpus is StoredCorpus corpus
+        ? $"Target corpus: {corpus.Name} [{corpus.LanguageCode}]"
+        : "Select one specific corpus before starting an EPUB analysis.";
+
+    public int EpubAnalysisProgressPercent => EpubAnalysis.ProgressPercent;
+
+    public string EpubAnalysisProgressSummary => EpubAnalysis.ProgressSummary;
+
+    public string EpubAnalysisResultSummary => EpubAnalysis.ResultSummary;
+
+    public bool CanOpenLatestAnalysisOutput => EpubAnalysis.CanOpenOutputDirectory;
+
+    public bool CanOpenLatestAnalysisDiagnostics => EpubAnalysis.CanOpenDiagnostics;
+
+    public bool CanOpenLatestAnalysisFailures => EpubAnalysis.CanOpenFailures;
 
     public string RunTitle => Dashboard.RunTitle;
 
@@ -296,40 +355,10 @@ public sealed class MainWindowViewModel : ViewModelBase
             return;
         }
 
+        long? preferredRunId = SelectedRun?.Id;
         await ExecuteBusyAsync(
             "Loading corpora and runs from database...",
-            async token =>
-            {
-                string databasePath = DatabasePath;
-                IReadOnlyList<StoredAnalysisRunSummary> runs = await _runLoader(databasePath, token)
-                    .ConfigureAwait(true);
-                token.ThrowIfCancellationRequested();
-
-                Runs.Clear();
-                foreach (StoredAnalysisRunSummary run in runs)
-                {
-                    Runs.Add(new RunListItemViewModel(run));
-                }
-
-                await Corpora.LoadAsync(databasePath, Runs, token).ConfigureAwait(true);
-                RebuildVisibleRuns();
-                CompareRuns.EnsureDefaultRightRun(Runs, SelectedRun);
-                if (VisibleRuns.Count == 0)
-                {
-                    string message = Runs.Count == 0
-                        ? "The database was opened, but it does not contain analysis runs."
-                        : "The selected corpus does not contain analysis runs.";
-                    ClearSelectedRun(message);
-                    return $"Loaded {Corpora.Corpora.Count - 1} corpus/corpora and {Runs.Count} run(s).";
-                }
-
-                RunListItemViewModel? runToSelect = SelectedRun is not null
-                    && VisibleRuns.Contains(SelectedRun)
-                        ? SelectedRun
-                        : VisibleRuns[0];
-                await SelectRunCoreAsync(runToSelect, token).ConfigureAwait(true);
-                return $"Loaded {Corpora.Corpora.Count - 1} corpus/corpora and {Runs.Count} run(s).";
-            },
+            token => ReloadRunsCoreAsync(preferredRunId, token),
             "Loading cancelled.",
             ex => $"Error loading database: {ex.Message}",
             ex =>
@@ -429,6 +458,72 @@ public sealed class MainWindowViewModel : ViewModelBase
     public bool IsSelectedCorpusLanguageCompatible(string? languageCode)
     {
         return Corpora.IsSelectedCorpusLanguageCompatible(languageCode);
+    }
+
+    public async Task AnalyzeEpubFolderAsync(
+        string? inputFolder,
+        string? outputDirectory,
+        bool recursive,
+        bool confirmed,
+        CancellationToken cancellationToken = default)
+    {
+        if (!EpubAnalysis.TryCreateRequest(
+            DatabasePath,
+            SelectedCorpus,
+            inputFolder,
+            outputDirectory,
+            recursive,
+            confirmed,
+            out AnalyzeEpubFolderAndSaveRequest? request,
+            out string validationError))
+        {
+            OperationState.SetStatus(validationError);
+            EpubAnalysis.MarkFailed(validationError);
+            return;
+        }
+
+        AnalyzeEpubFolderAndSaveRequest validatedRequest = request!;
+        await ExecuteBusyAsync(
+            $"Analyzing EPUB folder for corpus '{validatedRequest.CorpusName}'...",
+            async token =>
+            {
+                AnalyzeEpubFolderAndSaveResult result = await EpubAnalysis
+                    .ExecuteAsync(validatedRequest, token)
+                    .ConfigureAwait(true);
+                string reloadMessage = await ReloadRunsCoreAsync(result.AnalysisRun.Id, CancellationToken.None)
+                    .ConfigureAwait(true);
+                return $"Run {result.AnalysisRun.Id} completed. {reloadMessage}";
+            },
+            "EPUB analysis cancelled.",
+            ex => $"EPUB analysis failed: {ex.Message}",
+            ex => EpubAnalysis.MarkFailed($"EPUB analysis failed: {ex.Message}"),
+            cancellationToken,
+            EpubAnalysis.MarkCancelled,
+            acceptCompletedOperationAfterCancellation: true).ConfigureAwait(true);
+    }
+
+    public async Task OpenLatestAnalysisOutputAsync(CancellationToken cancellationToken = default)
+    {
+        await OpenLatestAnalysisTargetAsync(
+            EpubAnalysis.OpenOutputDirectoryAsync,
+            "Could not open the latest analysis output folder",
+            cancellationToken).ConfigureAwait(true);
+    }
+
+    public async Task OpenLatestAnalysisDiagnosticsAsync(CancellationToken cancellationToken = default)
+    {
+        await OpenLatestAnalysisTargetAsync(
+            EpubAnalysis.OpenDiagnosticsAsync,
+            "Could not open the latest import diagnostics",
+            cancellationToken).ConfigureAwait(true);
+    }
+
+    public async Task OpenLatestAnalysisFailuresAsync(CancellationToken cancellationToken = default)
+    {
+        await OpenLatestAnalysisTargetAsync(
+            EpubAnalysis.OpenFailuresAsync,
+            "Could not open the latest import-failures CSV",
+            cancellationToken).ConfigureAwait(true);
     }
 
     public async Task SelectRunAsync(
@@ -789,6 +884,60 @@ public sealed class MainWindowViewModel : ViewModelBase
         _currentOperationCancellation?.Cancel();
     }
 
+    private async Task<string> ReloadRunsCoreAsync(
+        long? preferredRunId,
+        CancellationToken cancellationToken)
+    {
+        string databasePath = DatabasePath;
+        IReadOnlyList<StoredAnalysisRunSummary> runs = await _runLoader(databasePath, cancellationToken)
+            .ConfigureAwait(true);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        Runs.Clear();
+        foreach (StoredAnalysisRunSummary run in runs)
+        {
+            Runs.Add(new RunListItemViewModel(run));
+        }
+
+        await Corpora.LoadAsync(databasePath, Runs, cancellationToken).ConfigureAwait(true);
+        RebuildVisibleRuns();
+        CompareRuns.EnsureDefaultRightRun(Runs, SelectedRun);
+        if (VisibleRuns.Count == 0)
+        {
+            string message = Runs.Count == 0
+                ? "The database was opened, but it does not contain analysis runs."
+                : "The selected corpus does not contain analysis runs.";
+            ClearSelectedRun(message);
+            return $"Loaded {Math.Max(0, Corpora.Corpora.Count - 1):n0} corpus/corpora and {Runs.Count:n0} run(s).";
+        }
+
+        RunListItemViewModel runToSelect = preferredRunId is not null
+            ? VisibleRuns.FirstOrDefault(run => run.Id == preferredRunId.Value) ?? VisibleRuns[0]
+            : VisibleRuns[0];
+        await SelectRunCoreAsync(runToSelect, cancellationToken).ConfigureAwait(true);
+        return $"Loaded {Math.Max(0, Corpora.Corpora.Count - 1):n0} corpus/corpora and {Runs.Count:n0} run(s).";
+    }
+
+    private async Task OpenLatestAnalysisTargetAsync(
+        Func<CancellationToken, Task<string>> openAction,
+        string errorPrefix,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            string message = await openAction(cancellationToken).ConfigureAwait(true);
+            OperationState.SetStatus(message);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            OperationState.SetStatus("Opening the latest analysis artifact was cancelled.");
+        }
+        catch (Exception ex)
+        {
+            OperationState.SetStatus($"{errorPrefix}: {ex.Message}");
+        }
+    }
+
     private async Task SelectRunCoreAsync(
         RunListItemViewModel? runItem,
         CancellationToken cancellationToken)
@@ -920,7 +1069,9 @@ public sealed class MainWindowViewModel : ViewModelBase
         string cancellationMessage,
         Func<Exception, string> errorMessage,
         Action<Exception>? onError,
-        CancellationToken externalCancellationToken)
+        CancellationToken externalCancellationToken,
+        Action? onCancelled = null,
+        bool acceptCompletedOperationAfterCancellation = false)
     {
         using CancellationTokenSource linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(
             externalCancellationToken);
@@ -934,7 +1085,10 @@ public sealed class MainWindowViewModel : ViewModelBase
         try
         {
             string completionMessage = await operation(linkedCancellation.Token).ConfigureAwait(true);
-            linkedCancellation.Token.ThrowIfCancellationRequested();
+            if (!acceptCompletedOperationAfterCancellation)
+            {
+                linkedCancellation.Token.ThrowIfCancellationRequested();
+            }
             if (operationVersion == Volatile.Read(ref _operationVersion))
             {
                 OperationState.SetStatus(completionMessage);
@@ -944,6 +1098,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         {
             if (operationVersion == Volatile.Read(ref _operationVersion))
             {
+                onCancelled?.Invoke();
                 OperationState.SetStatus(cancellationMessage);
             }
         }

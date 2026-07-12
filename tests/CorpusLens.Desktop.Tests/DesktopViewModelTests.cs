@@ -1,3 +1,4 @@
+using CorpusLens.Application.EpubAnalysis;
 using CorpusLens.Application.Queries;
 using CorpusLens.Application.Storage;
 using CorpusLens.Desktop.ViewModels;
@@ -711,6 +712,196 @@ public sealed class DesktopViewModelTests
         }
     }
 
+    [Fact]
+    public void EpubAnalysis_ValidatesFoldersAndBuildsRequestFromSelectedCorpus()
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"corpuslens-desktop-analysis-{Guid.NewGuid():N}");
+        string input = Path.Combine(root, "input");
+        string output = Path.Combine(root, "output");
+        string databasePath = Path.Combine(root, "corpuslens.db");
+        Directory.CreateDirectory(input);
+        try
+        {
+            File.WriteAllText(databasePath, string.Empty);
+            File.WriteAllText(Path.Combine(input, "book.epub"), "test");
+            DateTimeOffset now = DateTimeOffset.UtcNow;
+            CorpusListItemViewModel corpus = new(
+                new StoredCorpus(9, "Italian classics", "it", string.Empty, now, now),
+                0);
+            EpubAnalysisViewModel viewModel = new();
+
+            bool valid = viewModel.TryCreateRequest(
+                databasePath,
+                corpus,
+                input,
+                output,
+                recursive: false,
+                confirmed: true,
+                out AnalyzeEpubFolderAndSaveRequest? request,
+                out string error);
+
+            Assert.True(valid, error);
+            Assert.NotNull(request);
+            Assert.Equal("Italian classics", request!.CorpusName);
+            Assert.Equal("it", request.LanguageCode);
+            Assert.Equal(Path.GetFullPath(input), request.FolderPath);
+            Assert.Equal(Path.GetFullPath(output), request.OutputDirectory);
+            Assert.Equal(EpubAnalysisDefaults.SearchPattern, request.SearchPattern);
+            Assert.False(request.Recursive);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task EpubFolderSave_RejectsLanguageDifferentFromPersistedCorpus()
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"corpuslens-language-guard-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        try
+        {
+            string databasePath = Path.Combine(root, "corpuslens.db");
+            SqliteCorpusStore store = new(databasePath);
+            await store.CreateCorpusAsync("English corpus", "en");
+            AnalyzeEpubFolderAndSaveUseCase useCase = new();
+            AnalyzeEpubFolderAndSaveRequest request = new(
+                Path.Combine(root, "missing-input"),
+                "it",
+                Path.Combine(root, "output"),
+                EpubAnalysisDefaults.CreateSettings(),
+                EpubAnalysisDefaults.SearchPattern,
+                false,
+                databasePath,
+                "English corpus");
+
+            InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => useCase.ExecuteAsync(request));
+
+            Assert.Contains("uses language 'en'", exception.Message);
+            Assert.Contains("requested analysis language is 'it'", exception.Message);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task EpubAnalysis_ReportsProgressAndFormatsCompletedRun()
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"corpuslens-desktop-analysis-result-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        string output = Path.Combine(root, "output");
+        Directory.CreateDirectory(output);
+        try
+        {
+            string report = Path.Combine(output, "report.md");
+            string words = Path.Combine(output, "words.csv");
+            string ngrams = Path.Combine(output, "ngrams.csv");
+            string nextWords = Path.Combine(output, "next_words.csv");
+            string extracted = Path.Combine(output, "extracted_text.txt");
+            string failures = Path.Combine(output, "import_failures.csv");
+            string diagnostics = Path.Combine(output, "import_diagnostics.md");
+            foreach (string file in new[] { report, words, ngrams, nextWords, extracted, failures, diagnostics })
+            {
+                File.WriteAllText(file, string.Empty);
+            }
+
+            CorpusAnalysisResult analysis = new(
+                new CorpusSummary(1, 2, 10, 8, 6, 4.0, 5.0),
+                Array.Empty<WordFrequency>(),
+                Array.Empty<NGramFrequency>(),
+                Array.Empty<NextWordFrequency>(),
+                Array.Empty<AnalyzedSentence>());
+            ImportedChapter chapter = new(1, "One", "one.xhtml", string.Empty, "Some clean text.");
+            ImportedBook sourceBook = new("source", "Source book", "Author", "en", "source.epub", new[] { chapter });
+            ImportedBook aggregateBook = new("aggregate", "EPUB folder: books", string.Empty, "en", root, new[] { chapter });
+            AnalyzeEpubFolderResult folderResult = new(
+                aggregateBook,
+                new[] { sourceBook },
+                Array.Empty<EpubImportFailure>(),
+                analysis,
+                report,
+                words,
+                ngrams,
+                nextWords,
+                extracted,
+                failures,
+                diagnostics);
+            DateTimeOffset now = DateTimeOffset.UtcNow;
+            StoredCorpus corpus = new(3, "English", "en", string.Empty, now, now);
+            StoredBook storedBook = new(4, 3, aggregateBook.Title, string.Empty, "en", root, "hash", now, "Imported", string.Empty);
+            StoredAnalysisRun run = new(
+                77,
+                3,
+                4,
+                now,
+                now,
+                "Completed",
+                "test",
+                "{}",
+                2,
+                10,
+                8,
+                6,
+                4.0,
+                5.0,
+                report,
+                words,
+                ngrams,
+                nextWords,
+                extracted,
+                string.Empty);
+            AnalyzeEpubFolderAndSaveResult savedResult = new(
+                folderResult,
+                corpus,
+                storedBook,
+                new[] { storedBook },
+                Array.Empty<StoredAnalysisRunBook>(),
+                run);
+            EpubAnalysisViewModel viewModel = new(
+                (request, _, progress) =>
+                {
+                    progress?.Report(new EpubAnalysisProgress(
+                        EpubAnalysisStage.ImportingBooks,
+                        50,
+                        "Halfway",
+                        1,
+                        2,
+                        1,
+                        0));
+                    return Task.FromResult(savedResult);
+                },
+                handler => new ImmediateProgress<EpubAnalysisProgress>(handler));
+            AnalyzeEpubFolderAndSaveRequest request = new(
+                root,
+                "en",
+                output,
+                EpubAnalysisDefaults.CreateSettings(),
+                EpubAnalysisDefaults.SearchPattern,
+                false,
+                Path.Combine(root, "corpuslens.db"),
+                "English");
+
+            AnalyzeEpubFolderAndSaveResult result = await viewModel.ExecuteAsync(request);
+
+            Assert.Equal(77, result.AnalysisRun.Id);
+            Assert.Equal(100, viewModel.ProgressPercent);
+            Assert.Contains("Run 77", viewModel.ProgressSummary);
+            Assert.Contains("Imported EPUB files: 1", viewModel.ResultSummary);
+            Assert.Contains("Word tokens: 8", viewModel.ResultSummary);
+            Assert.True(viewModel.CanOpenOutputDirectory);
+            Assert.True(viewModel.CanOpenDiagnostics);
+            Assert.True(viewModel.CanOpenFailures);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static ChapterExplorerItem CreateChapter(
         long id,
         int orderIndex,
@@ -761,4 +952,20 @@ public sealed class DesktopViewModelTests
             4.8,
             "report.md");
     }
+
+    private sealed class ImmediateProgress<T> : IProgress<T>
+    {
+        private readonly Action<T> _handler;
+
+        public ImmediateProgress(Action<T> handler)
+        {
+            _handler = handler;
+        }
+
+        public void Report(T value)
+        {
+            _handler(value);
+        }
+    }
+
 }

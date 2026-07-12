@@ -20,6 +20,7 @@ public sealed partial class MainWindow
         TextBlock statusText = CreateBoundText(viewModel, nameof(MainWindowViewModel.StatusMessage), () => viewModel.StatusMessage);
         TextBlock corpusSummaryText = CreateBoundText(viewModel, nameof(MainWindowViewModel.CorpusSummary), () => viewModel.CorpusSummary);
         TextBlock corpusDetailsText = CreateBoundText(viewModel, nameof(MainWindowViewModel.CorpusDetails), () => viewModel.CorpusDetails);
+        Control epubAnalysisPanel = BuildEpubAnalysis(viewModel, window);
         TextBlock runTitleText = CreateBoundText(viewModel, nameof(MainWindowViewModel.RunTitle), () => viewModel.RunTitle);
         runTitleText.FontSize = 26;
         runTitleText.FontWeight = FontWeight.SemiBold;
@@ -132,6 +133,7 @@ public sealed partial class MainWindow
             Content = BuildMainArea(
                 corpusSummaryText,
                 corpusDetailsText,
+                epubAnalysisPanel,
                 runTitleText,
                 runSubtitleText,
                 coreMetricsText,
@@ -182,13 +184,32 @@ public sealed partial class MainWindow
         body.Children.Add(mainArea);
 
         ProgressBar progressBar = CreateBusyProgress(viewModel);
+        Button cancelOperationButton = new()
+        {
+            Content = "Cancel",
+            Margin = new Thickness(12, 0),
+            IsEnabled = viewModel.IsBusy,
+            IsVisible = viewModel.IsBusy,
+        };
+        cancelOperationButton.Click += (_, _) => viewModel.CancelCurrentOperation();
+        viewModel.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(MainWindowViewModel.IsBusy))
+            {
+                cancelOperationButton.IsEnabled = viewModel.IsBusy;
+                cancelOperationButton.IsVisible = viewModel.IsBusy;
+            }
+        };
+
         Grid statusGrid = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("*,220"),
+            ColumnDefinitions = new ColumnDefinitions("*,Auto,220"),
         };
         Grid.SetColumn(statusText, 0);
         statusGrid.Children.Add(statusText);
-        Grid.SetColumn(progressBar, 1);
+        Grid.SetColumn(cancelOperationButton, 1);
+        statusGrid.Children.Add(cancelOperationButton);
+        Grid.SetColumn(progressBar, 2);
         statusGrid.Children.Add(progressBar);
 
         Border statusBar = new()
@@ -371,6 +392,7 @@ public sealed partial class MainWindow
     private static Control BuildMainArea(
         TextBlock corpusSummaryText,
         TextBlock corpusDetailsText,
+        Control epubAnalysisPanel,
         TextBlock runTitleText,
         TextBlock runSubtitleText,
         TextBlock coreMetricsText,
@@ -424,6 +446,7 @@ public sealed partial class MainWindow
         };
 
         stack.Children.Add(BuildCorpusManagement(viewModel, corpusSummaryText, corpusDetailsText));
+        stack.Children.Add(epubAnalysisPanel);
         stack.Children.Add(runTitleText);
         stack.Children.Add(runSubtitleText);
 

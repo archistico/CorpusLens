@@ -206,7 +206,7 @@ The Avalonia desktop project is available as an early shell:
 make desktop
 ```
 
-The desktop app can open an existing `corpuslens.db`, list and filter corpora, create a corpus with a validated language, show its associated runs, browse ordered source books and chapters, preview the persisted clean text, and display a compact run dashboard. Corpus creation is an explicit persistent write and requires confirmation in the UI. Supported corpus languages are English, Italian, French and German. The app also includes word, n-gram, collocation, phrase, comparison, and reports/exports explorers. Database and explorer queries run in the background and show a progress indicator so the UI stays responsive. Superseded desktop operations are cancelled, and each explorer is isolated in a testable ViewModel.
+The desktop app can open an existing `corpuslens.db`, list and filter corpora, create a corpus with a validated language, and run a complete EPUB-folder analysis without using the terminal. The analysis panel selects input/output folders, supports recursive scanning, displays stage and file counters, allows cooperative cancellation, opens import diagnostics, refreshes the run list and selects the completed run automatically. Corpus creation and EPUB analysis are explicit persistent writes and require confirmation in the UI. Supported corpus languages are English, Italian, French and German. The app also browses ordered source books and chapters, previews persisted clean text, displays a compact run dashboard, and includes word, n-gram, collocation, phrase, comparison, and reports/exports explorers. Database, explorer and analysis operations run asynchronously so the UI stays responsive.
 
 ## Development
 
@@ -232,6 +232,7 @@ make check
 - `docs/milestone-18-11-ngram-explorer.md`
 - `docs/milestone-18-12-report-export.md`
 - `docs/milestone-18-13-corpus-management.md`
+- `docs/milestone-18-14-desktop-epub-analysis.md`
 
 ### Desktop word explorer
 
@@ -246,7 +247,7 @@ Run the Avalonia desktop shell with:
 make desktop
 ```
 
-The desktop UI can open an existing `corpuslens.db`, list and create corpora, filter analysis runs by corpus, browse source books and their metadata, inspect ordered chapters and persisted clean text, show a run dashboard, inspect and open generated reports/exports, search words, explore n-grams, explore collocations, explore recurring phrases, and compare runs.
+The desktop UI can open an existing `corpuslens.db`, list and create corpora, analyze EPUB folders into the selected corpus, filter analysis runs by corpus, browse source books and their metadata, inspect ordered chapters and persisted clean text, show a run dashboard, inspect and open generated reports/exports, search words, explore n-grams, explore collocations, explore recurring phrases, and compare runs.
 
 
 ### Desktop corpus management
@@ -266,3 +267,8 @@ The n-gram panel can browse all stored sizes or focus on bigrams, trigrams, 4-gr
 ### Desktop reports and exports
 
 For the selected run, the Reports and exports panel resolves the paths stored in SQLite for `report.md`, `words.csv`, `ngrams.csv`, `next_words.csv` and `extracted_text.txt`. It also discovers `import_diagnostics.md` and `import_failures.csv` in the resolved output directory when present. A recorded path whose file has been removed is shown as **Missing**; an empty or optional unrecorded path is shown as **Not generated**. Only existing files and directories can be opened, and CorpusLens does not edit the exported artifacts.
+
+
+### Desktop EPUB-folder analysis
+
+Select a specific corpus, choose an input folder and output folder, optionally enable recursive scanning, confirm the persistent operation, and click **Analyze EPUB folder**. The corpus language is used automatically and must match the analysis request. CorpusLens reports the active stage, percentage, processed/imported/skipped files, writes the same artifacts as `analyze-epub-folder`, saves the run and token index, refreshes the database view, and selects the new run. The latest output folder, `import_diagnostics.md` and `import_failures.csv` can be opened directly. Cancellation is cooperative; partial database books and runs are removed, while filesystem artifacts already written may remain in the selected output folder.

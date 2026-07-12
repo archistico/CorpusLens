@@ -151,8 +151,11 @@ public sealed class CorpusManagementViewModel : ViewModelBase
         }
 
         return CorpusLanguageCatalog.TryNormalizeSupportedCode(languageCode, out string normalizedLanguage)
-            && string.Equals(
+            && CorpusLanguageCatalog.TryNormalizeSupportedCode(
                 selected.Corpus.LanguageCode,
+                out string normalizedCorpusLanguage)
+            && string.Equals(
+                normalizedCorpusLanguage,
                 normalizedLanguage,
                 StringComparison.OrdinalIgnoreCase);
     }

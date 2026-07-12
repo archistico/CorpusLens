@@ -256,6 +256,56 @@ public sealed class SqliteCorpusStore
         return new StoredBookImport(storedBook, chapters);
     }
 
+    public async Task DeleteBooksAsync(
+        IReadOnlyCollection<long> bookIds,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(bookIds);
+        if (bookIds.Count == 0)
+        {
+            return;
+        }
+
+        await InitializeAsync(cancellationToken).ConfigureAwait(false);
+
+        long[] distinctBookIds = bookIds
+            .Where(bookId => bookId > 0)
+            .Distinct()
+            .ToArray();
+        if (distinctBookIds.Length == 0)
+        {
+            return;
+        }
+
+        await using SqliteConnection connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await EnableForeignKeysAsync(connection, cancellationToken).ConfigureAwait(false);
+        using SqliteTransaction transaction = connection.BeginTransaction();
+
+        try
+        {
+            await using SqliteCommand command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = "DELETE FROM Book WHERE Id = $bookId;";
+            SqliteParameter bookIdParameter = command.Parameters.Add("$bookId", SqliteType.Integer);
+            command.Prepare();
+
+            foreach (long bookId in distinctBookIds)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                bookIdParameter.Value = bookId;
+                await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            throw;
+        }
+    }
+
     public async Task<StoredAnalysisRun> SaveAnalysisRunAsync(
         long corpusId,
         long bookId,
