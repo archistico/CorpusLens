@@ -1,6 +1,6 @@
 # CorpusLens — Roadmap nuove milestone
 
-Versione: 0.3
+Versione: 0.5
 Stato: pianificazione operativa
 Ambito: storico delle milestone implementate e pianificazione dell’evoluzione desktop.
 
@@ -8,7 +8,7 @@ Ambito: storico delle milestone implementate e pianificazione dell’evoluzione 
 
 ## 1. Stato attuale del progetto
 
-La base corrente validata arriva alla **Milestone 18.8 — Books explorer**.
+La base corrente arriva alla **Milestone 18.11 — N-gram explorer**.
 
 CorpusLens dispone di:
 
@@ -23,10 +23,10 @@ CorpusLens dispone di:
 * indice persistente dei token con fallback per run legacy;
 * persistenza SQLite di corpus, libri, capitoli, run e statistiche;
 * CLI completa per analisi e interrogazione;
-* applicazione desktop Avalonia read-only con apertura database, elenco run, dashboard, word explorer, collocations explorer, phrase explorer, confronto run e Books explorer;
-* caricamento asincrono delle principali viste desktop.
+* applicazione desktop Avalonia read-only con apertura database, elenco run, dashboard, Books explorer, Chapters explorer, word explorer, N-gram explorer, collocations explorer, phrase explorer e confronto run;
+* caricamento asincrono delle principali viste desktop, inclusa la navigazione libro → capitoli e le query n-gram.
 
-La prossima fase pianificata copre le Milestone **18.9–18.15**: consolidamento dell'architettura desktop, esplorazione capitoli e n-grammi, accesso a report/export, gestione corpus, analisi EPUB dalla UI e distribuzione Windows.
+La prossima fase pianificata copre le Milestone **18.12–18.15**: accesso a report/export, gestione corpus, analisi EPUB dalla UI e distribuzione Windows.
 
 ---
 
@@ -1339,39 +1339,53 @@ Desktop UI panel for comparing two runs: optional single-word comparison, top le
 
 Desktop source-books explorer for the selected run, with aggregate counts, ordered book list and metadata details. It reuses `AnalysisRunQueryService.ListRunBooksAsync`, including the existing fallback for legacy single-book runs.
 
+## Milestone 18.9 — Desktop architecture consolidation note
+
+Desktop state and query logic are now split into dedicated ViewModels. `MainWindowViewModel` remains the coordinator, while busy/status handling and cancellation are centralized. The programmatic Avalonia view has also been divided into feature-specific partial files, and a new desktop test project covers the extracted ViewModels.
+
+## Milestone 18.10 — Chapters explorer note
+
+The desktop source-book view now continues into an ordered chapter list and a read-only preview of persisted clean text. Chapter metrics and conservative quality warnings are computed in an application query service, while search and active-match navigation remain in a dedicated testable Desktop ViewModel.
+
+## Milestone 18.11 — N-gram explorer note
+
+The desktop application now exposes persisted n-gram statistics through a dedicated query service and ViewModel. Users can choose the stored n size, minimum count, exact contained term, content/function composition and ordering, while document counts and frequency per million remain visible. Results are read-only and selectable for copying.
+
 ---
 
 # Fase 8 — Evoluzione della UI desktop
 
-Le milestone seguenti sono **pianificate** e partono dalla base validata della Milestone 18.8. L'ordine proposto riduce il rischio di regressioni: prima si consolida l'architettura desktop, poi si completano le viste di esplorazione e infine si introducono le operazioni di scrittura e l'analisi EPUB dalla UI.
+Le Milestone 18.9–18.11 consolidano la base desktop e completano la navigazione read-only fino al testo dei capitoli e alle statistiche n-gram; le Milestone **18.12–18.15** restano pianificate. L'ordine proposto completa prima l'accesso agli output esistenti e introduce solo in seguito le operazioni di scrittura e l'analisi EPUB dalla UI.
 
 ## Milestone 18.9 — Consolidamento architettura Desktop
 
 ### Stato
 
-PIANIFICATA.
+IMPLEMENTATA E VALIDATA — BUILD E TEST SUPERATI.
 
 ### Obiettivo
 
-Ridurre la complessità crescente di `MainWindowViewModel` e `MainWindow.axaml` prima di aggiungere nuove funzioni desktop.
+Ridurre la complessità crescente di `MainWindowViewModel` e `MainWindow.axaml.cs` prima di aggiungere nuove funzioni desktop, preservando il comportamento validato nella Milestone 18.8.
 
-### Attività previste
+### Interventi completati
 
-* separare la finestra principale in viste e ViewModel dedicati per dashboard, libri, parole, collocazioni, frasi e confronto run;
-* mantenere il flusso `Desktop → Application → Infrastructure`, senza accesso SQLite diretto dalla UI;
-* centralizzare stato di caricamento, messaggi di errore e progress indicator;
-* introdurre comandi asincroni cancellabili dove utile;
-* definire servizi desktop piccoli e testabili per selezione run e navigazione;
-* aggiungere test unitari per i ViewModel estratti;
-* preservare comportamento e layout già validati nella Milestone 18.8.
+* estratti ViewModel dedicati per dashboard, libri, parole, collocazioni, frasi e confronto run;
+* mantenuto `MainWindowViewModel` come coordinatore di database, selezione run e operazioni globali;
+* centralizzati stato busy e messaggi nella classe `DesktopOperationStateViewModel`;
+* introdotta cancellazione coordinata delle operazioni asincrone mediante `CancellationTokenSource` collegati;
+* mantenuto il flusso `Desktop → Application → Infrastructure`, senza query SQLite nel progetto Desktop;
+* rese iniettabili le funzioni di query dei ViewModel, così da poterli testare senza database reale;
+* suddiviso il code-behind della finestra in file parziali per shell e singole aree funzionali;
+* aggiunto il progetto `CorpusLens.Desktop.Tests` con test dedicati ai ViewModel estratti;
+* preservati layout, etichette, filtri e risultati delle viste introdotte fino alla Milestone 18.8.
 
 ### Criteri di accettazione
 
 * build e test completati senza errori;
 * nessuna regressione nelle viste desktop esistenti;
-* `MainWindowViewModel` non contiene più tutta la logica delle singole aree funzionali;
-* caricamento asincrono ed error handling risultano uniformi in tutte le viste;
-* i nuovi ViewModel principali dispongono di test dedicati.
+* `MainWindowViewModel` coordina le aree ma non contiene più la loro logica di formattazione e interrogazione;
+* caricamento asincrono, stato busy, messaggi e cancellazione sono gestiti in modo uniforme;
+* i ViewModel principali dispongono di test dedicati.
 
 ---
 
@@ -1379,7 +1393,7 @@ Ridurre la complessità crescente di `MainWindowViewModel` e `MainWindow.axaml` 
 
 ### Stato
 
-PIANIFICATA.
+IMPLEMENTATA E VALIDATA — BUILD E TEST SUPERATI.
 
 ### Obiettivo
 
@@ -1389,16 +1403,21 @@ Estendere la navigazione dei dati dalla run al libro e dal libro ai capitoli sal
 Run → Book → Chapters → Text preview
 ```
 
-### Funzioni previste
+### Interventi completati
 
-* elenco ordinato dei capitoli del libro selezionato;
-* titolo, posizione e dimensione di ogni capitolo;
-* anteprima del testo pulito salvato nel database;
-* conteggio di caratteri, parole e frasi;
-* ricerca testuale nel capitolo visualizzato;
-* evidenziazione dei capitoli molto corti, molto lunghi o potenzialmente sospetti;
-* caricamento asincrono e cancellabile;
-* supporto alle run aggregate e alle run legacy compatibili.
+* aggiunto `ChapterExplorerQueryService`, che riusa `SqliteCorpusStore.ListChaptersAsync` senza duplicare SQL nel progetto Desktop;
+* aggiunti modelli applicativi con testo pulito persistito, conteggi e indicatori di qualità;
+* aggiunto `ChaptersExplorerViewModel` con query iniettabile e caricamento cancellabile;
+* caricamento automatico dei capitoli del primo libro della run;
+* caricamento asincrono dei capitoli quando cambia il libro selezionato;
+* elenco ordinato per `OrderIndex`, con titolo, dimensione, parole, frasi e avvisi;
+* anteprima read-only del valore `Chapter.CleanText` già persistito;
+* dettagli del capitolo con ID, posizione, percorso sorgente e metriche;
+* ricerca case-insensitive nell'anteprima con selezione della corrispondenza attiva;
+* navigazione precedente/successiva con ritorno ciclico;
+* indicatori per capitoli vuoti, molto corti, molto lunghi o potenzialmente sospetti;
+* messaggi espliciti per libri senza capitoli e dati legacy compatibili;
+* test ViewModel per ordinamento, selezione automatica, riepiloghi e ricerca.
 
 ### Criteri di accettazione
 
@@ -1406,7 +1425,8 @@ Run → Book → Chapters → Text preview
 * l'ordinamento rispetta la sequenza originale dell'EPUB;
 * l'anteprima usa esclusivamente il testo pulito già persistito;
 * i casi senza capitoli o con dati legacy sono gestiti con messaggi chiari;
-* nessuna query SQL viene duplicata nel progetto Desktop.
+* nessuna query SQL viene duplicata nel progetto Desktop;
+* build e test completati senza errori.
 
 ---
 
@@ -1414,30 +1434,36 @@ Run → Book → Chapters → Text preview
 
 ### Stato
 
-PIANIFICATA.
+IMPLEMENTATA — DA VALIDARE CON BUILD E TEST.
 
 ### Obiettivo
 
 Portare nella UI desktop l'esplorazione di bigrammi, trigrammi e altri n-grammi già disponibili nei dati di analisi.
 
-### Funzioni previste
+### Interventi completati
 
-* scelta della dimensione `n`;
-* ordinamento per frequenza;
-* soglia minima di occorrenze;
-* limite massimo di risultati;
-* ricerca o filtro per termine contenuto;
-* conteggio dei documenti o capitoli in cui compare l'n-gramma, quando disponibile;
-* filtri content/function quando linguisticamente appropriati;
-* copia o esportazione della selezione.
+* aggiunto `SqliteCorpusStore.ListNGramsAsync` con filtri parametrizzati per run, dimensione, conteggio minimo e termine contenuto;
+* aggiunto ordinamento affidabile per conteggio, frequenza per milione, numero documenti o testo;
+* aggiunto `NGramExplorerQueryService` nel livello Application;
+* aggiunti modelli applicativi request/result/item e filtri espliciti;
+* aggiunta classificazione trasparente della composizione lessicale con pattern `C`/`F`;
+* aggiunti filtri per tutti gli n-grammi, sole parole contenuto, sole parole funzione e confine contenuto/contenuto;
+* aggiunto `NGramExplorerViewModel` con query iniettabile e caricamento cancellabile;
+* aggiunta selezione rapida di tutte le dimensioni, bigrammi, trigrammi, 4-grammi e 5-grammi;
+* aggiunti soglia minima, limite massimo e ricerca di una parola o frase contigua contenuta;
+* visualizzati conteggio, document count, frequenza per milione e pattern lessicale;
+* risultati esposti in un controllo read-only selezionabile e copiabile con `Ctrl+C`;
+* aggiunti test per query SQLite filtrata, passaggio parametri del ViewModel e classificazione content/function.
 
 ### Criteri di accettazione
 
 * bigrammi e trigrammi sono consultabili senza usare il terminale;
-* filtri e ordinamento producono risultati coerenti con la CLI;
-* il caricamento non blocca la UI;
+* filtri e ordinamento producono risultati coerenti con le statistiche persistite e la CLI;
+* il caricamento non blocca la UI ed è cancellabile dalle operazioni successive;
 * le query restano nel livello Application/Infrastructure;
-* i risultati vuoti e i parametri non validi sono gestiti esplicitamente.
+* i risultati vuoti e i parametri non validi sono gestiti esplicitamente;
+* i risultati possono essere selezionati e copiati senza esportazioni distruttive;
+* build e test completati senza errori.
 
 ---
 
@@ -1586,7 +1612,8 @@ Preparare CorpusLens Desktop per un utilizzo regolare e per la distribuzione su 
 
 * la Milestone 18.9 precede tutte le nuove viste per evitare ulteriore crescita monolitica della finestra principale;
 * la Milestone 18.10 completa la navigazione read-only `run → libro → capitolo`;
-* le Milestone 18.11 e 18.12 completano l'esplorazione e l'accesso agli output esistenti;
+* la Milestone 18.11 completa l'esplorazione delle statistiche n-gram persistite;
+* la Milestone 18.12 completa l'accesso agli output esistenti;
 * la Milestone 18.13 introduce i primi servizi applicativi di scrittura richiesti dalla UI;
 * la Milestone 18.14 dipende dalla gestione corpus e dalla disponibilità di una pipeline asincrona cancellabile;
 * la Milestone 18.15 chiude il ciclo con stabilizzazione, packaging e documentazione utente.

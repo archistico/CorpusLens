@@ -157,6 +157,17 @@ public sealed class SqliteCorpusStoreTests
 
         IReadOnlyList<StoredWordStatistic> words = await store.ListTopWordsAsync(run.Id);
         IReadOnlyList<StoredNGramStatistic> ngrams = await store.ListTopNGramsAsync(run.Id);
+        IReadOnlyList<StoredNGramStatistic> filteredNGrams = await store.ListNGramsAsync(
+            run.Id,
+            n: 2,
+            minCount: 2,
+            searchTerm: "ALICE",
+            sort: StoredNGramSort.FrequencyPerMillion,
+            limit: 10);
+        IReadOnlyList<StoredNGramStatistic> substringOnlyNGrams = await store.ListNGramsAsync(
+            run.Id,
+            searchTerm: "he",
+            limit: 10);
         IReadOnlyList<StoredNextWordStatistic> nextWords = await store.ListTopNextWordsAsync(run.Id);
         IReadOnlyList<StoredSentenceCategoryStatistic> categories = await store.ListSentenceCategoryStatisticsAsync(run.Id);
 
@@ -179,6 +190,9 @@ public sealed class SqliteCorpusStoreTests
         StoredNGramStatistic helloAlice = Assert.Single(ngrams, ngram => ngram.Text == "hello alice");
         Assert.Equal(2, helloAlice.N);
         Assert.Equal(2, helloAlice.Count);
+        StoredNGramStatistic filteredHelloAlice = Assert.Single(filteredNGrams);
+        Assert.Equal(helloAlice.Id, filteredHelloAlice.Id);
+        Assert.Empty(substringOnlyNGrams);
 
         StoredNextWordStatistic nextWord = Assert.Single(nextWords, item => item.Word == "hello" && item.NextWord == "alice");
         IReadOnlyList<StoredNextWordStatistic> previousWords = await store.ListPreviousWordsAsync(run.Id, "alice");

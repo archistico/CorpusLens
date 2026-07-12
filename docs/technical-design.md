@@ -809,26 +809,40 @@ corpuslens export "English Kids" --format csv --out ./exports
 
 ### 12.6 CorpusLens.Desktop
 
-Interfaccia futura.
+Interfaccia desktop Avalonia read-only per l'esplorazione delle run già persistite.
 
-Possibile tecnologia:
+Funzioni disponibili:
+
+* apertura di un database CorpusLens;
+* elenco e selezione delle run;
+* dashboard corpus e diagnostica token index;
+* Books explorer;
+* Word explorer con KWIC e distribuzione per libro;
+* collocazioni e phrase mining;
+* confronto lessicale e di difficoltà tra run.
+
+La struttura desktop mantiene `MainWindowViewModel` come coordinatore e delega le singole aree a ViewModel dedicati:
 
 ```text
-Avalonia
+MainWindowViewModel
+├── DashboardViewModel
+├── BooksExplorerViewModel
+├── WordExplorerViewModel
+├── CollocationsExplorerViewModel
+├── PhraseExplorerViewModel
+├── CompareRunsViewModel
+└── DesktopOperationStateViewModel
 ```
 
-Funzioni future:
+Le query restano nel livello Application. I ViewModel desktop ricevono funzioni di query iniettabili per consentire test unitari senza database reale.
 
-* dashboard corpus;
-* import EPUB;
-* lista libri;
-* statistiche visuali;
-* ricerca parola;
-* KWIC;
-* confronto corpora;
-* esportazione report.
+```text
+CorpusLens.Desktop
+  -> CorpusLens.Application.Queries
+    -> CorpusLens.Infrastructure.Storage
+```
 
-Non va sviluppata nella prima fase.
+Il code-behind programmatico Avalonia è suddiviso per area funzionale. Le operazioni globali condividono busy state, messaggi e cancellazione coordinata. Import EPUB, gestione corpus ed esportazione dalla UI restano milestone successive.
 
 ---
 
@@ -1628,3 +1642,30 @@ La prima versione deve essere piccola, ma già utile per rispondere a domande co
 * questo corpus è più semplice o più complesso di un altro?
 
 Questo è il nucleo di CorpusLens.
+
+
+## Desktop chapter explorer
+
+Milestone 18.10 extends the read-only desktop query path without moving storage concerns into the UI:
+
+```text
+MainWindowViewModel
+  -> ChaptersExplorerViewModel
+    -> ChapterExplorerQueryService
+      -> SqliteCorpusStore.ListChaptersAsync
+```
+
+The application service derives word/sentence counts and conservative quality flags from the persisted `Chapter.CleanText`. The Desktop ViewModel owns selection, preview search and match navigation. No chapter text is edited or re-persisted.
+
+## Desktop n-gram explorer
+
+Milestone 18.11 exposes persisted `NGramStatistic` rows through the established read-only layering:
+
+```text
+MainWindowViewModel
+  -> NGramExplorerViewModel
+    -> NGramExplorerQueryService
+      -> SqliteCorpusStore.ListNGramsAsync
+```
+
+Storage-level filters handle run id, n size, minimum count, exact contained term and deterministic ordering. The Application layer resolves source-book languages and uses `StopWordProvider` to derive `C`/`F` composition patterns and language-aware content/function filters. The Desktop layer owns option state, cancellable loading and presentation only. No n-gram is recomputed or persisted by the explorer.

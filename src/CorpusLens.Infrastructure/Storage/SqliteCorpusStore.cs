@@ -1627,6 +1627,61 @@ public sealed class SqliteCorpusStore
         return ngrams;
     }
 
+    public async Task<IReadOnlyList<StoredNGramStatistic>> ListNGramsAsync(
+        long analysisRunId,
+        int? n = null,
+        int minCount = 1,
+        string? searchTerm = null,
+        StoredNGramSort sort = StoredNGramSort.Count,
+        int limit = 50,
+        CancellationToken cancellationToken = default)
+    {
+        await InitializeAsync(cancellationToken).ConfigureAwait(false);
+        int safeLimit = NormalizeLimit(limit);
+        int safeMinCount = Math.Max(1, minCount);
+        string normalizedSearchTerm = NormalizeNGramSearchTerm(searchTerm);
+        List<StoredNGramStatistic> ngrams = new();
+
+        await using SqliteConnection connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await EnableForeignKeysAsync(connection, cancellationToken).ConfigureAwait(false);
+
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Id, AnalysisRunId, CorpusId, BookId, N, Text, Count, DocumentCount, FrequencyPerMillion
+            FROM NGramStatistic
+            WHERE AnalysisRunId = $analysisRunId
+              AND ($n IS NULL OR N = $n)
+              AND Count >= $minCount
+              AND ($searchTerm = '' OR instr(' ' || lower(Text) || ' ', ' ' || $searchTerm || ' ') > 0)
+            ORDER BY
+              CASE WHEN $sort = 0 THEN Count END DESC,
+              CASE WHEN $sort = 1 THEN FrequencyPerMillion END DESC,
+              CASE WHEN $sort = 2 THEN DocumentCount END DESC,
+              CASE WHEN $sort = 3 THEN Text END COLLATE NOCASE ASC,
+              Count DESC,
+              FrequencyPerMillion DESC,
+              N,
+              Text COLLATE NOCASE
+            LIMIT $limit;
+            """;
+
+        AddParameter(command, "$analysisRunId", analysisRunId);
+        AddParameter(command, "$n", n.HasValue ? (object)n.Value : DBNull.Value);
+        AddParameter(command, "$minCount", safeMinCount);
+        AddParameter(command, "$searchTerm", normalizedSearchTerm);
+        AddParameter(command, "$sort", (int)sort);
+        AddParameter(command, "$limit", safeLimit);
+
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            ngrams.Add(ReadNGramStatistic(reader));
+        }
+
+        return ngrams;
+    }
+
     public async Task<IReadOnlyList<StoredNextWordStatistic>> ListTopNextWordsAsync(
         long analysisRunId,
         string? word = null,
@@ -2878,6 +2933,18 @@ public sealed class SqliteCorpusStore
     private static void AddParameter(SqliteCommand command, string name, object value)
     {
         command.Parameters.AddWithValue(name, value);
+    }
+
+    private static string NormalizeNGramSearchTerm(string? searchTerm)
+    {
+        if (string.IsNullOrWhiteSpace(searchTerm))
+        {
+            return string.Empty;
+        }
+
+        return string.Join(' ', searchTerm
+            .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            .ToLowerInvariant();
     }
 
     private static int NormalizeLimit(int limit)
