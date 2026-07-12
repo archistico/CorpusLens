@@ -69,7 +69,7 @@ MIN_PHRASE_COUNT ?= 3
 MIN_PHRASE_CHAPTERS ?= 2
 DIFFICULTY_LENGTH_ARGS = $(if $(LONG_WORD_LENGTH),--long-word-length $(LONG_WORD_LENGTH),) $(if $(VERY_LONG_WORD_LENGTH),--very-long-word-length $(VERY_LONG_WORD_LENGTH),)
 
-.PHONY: restore build test check demo desktop clean clean-data clean-artifacts setup-books corpus-create corpus-create-en corpus-create-it corpus-list analyze-text analyze-book analyze-books analyze-books-recursive analyze-en analyze-it analyze-en-recursive analyze-it-recursive stats-runs stats-summary stats-profile stats-health stats-books stats-token-index stats-words stats-content stats-function stats-word stats-word-books stats-compare-word stats-compare-words stats-compare-words-content stats-compare-words-function stats-compare-words-shared stats-compare-words-exclusive stats-difficulty stats-compare-difficulty stats-language-profiles stats-language-profile stats-collocations stats-collocations-content stats-collocations-function stats-phrases stats-phrases-content-boundary stats-kwic stats-ngrams stats-trigrams stats-next stats-categories inspect-run
+.PHONY: restore build test check demo desktop clean clean-data clean-artifacts setup-books corpus-create corpus-create-en corpus-create-it corpus-list analyze-text analyze-book analyze-books analyze-books-recursive analyze-en analyze-it analyze-en-recursive analyze-it-recursive stats-runs stats-summary stats-profile stats-health stats-books stats-token-index stats-words stats-content stats-function stats-word stats-word-books stats-compare-word stats-compare-words stats-compare-words-content stats-compare-words-function stats-compare-words-shared stats-compare-words-exclusive stats-difficulty stats-compare-difficulty stats-language-profiles stats-language-profile stats-collocations stats-collocations-content stats-collocations-function stats-phrases stats-phrases-content-boundary stats-kwic stats-ngrams stats-trigrams stats-next stats-categories inspect-run publish-win-x64
 
 restore:
 	$(DOTNET) restore
@@ -232,3 +232,6 @@ stats-categories:
 
 inspect-run:
 	$(DOTNET) run --project $(PROJECT) -- inspect run $(RUN) --out $(DIAGNOSTICS_OUT) --db $(DB)
+
+publish-win-x64:
+	powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/publish-win-x64.ps1

@@ -1,6 +1,23 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
+    <AssemblyName>CorpusLens</AssemblyName>
+    <Product>CorpusLens</Product>
+    <Authors>CorpusLens contributors</Authors>
+    <Description>Desktop corpus analysis and exploration for EPUB and text collections.</Description>
+    <Version>18.15.0</Version>
+    <AssemblyVersion>18.15.0.0</AssemblyVersion>
+    <FileVersion>18.15.0.0</FileVersion>
+    <InformationalVersion>18.15.0</InformationalVersion>
+    <ApplicationIcon>Assets\corpuslens.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' == 'win-x64'">
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <PublishTrimmed>false</PublishTrimmed>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="12.0.3" />
@@ -8,8 +25,7 @@
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.0.3" />
   </ItemGroup>
   <ItemGroup>
-    <!-- Milestone 18.1 builds the shell in C# code to avoid XAML runtime/build-time issues.
-         Keep MainWindow.axaml as a reference-only placeholder, but do not compile it. -->
+    <!-- The desktop shell is built in C# code; keep MainWindow.axaml as a reference-only placeholder. -->
     <AvaloniaXaml Remove="Views\MainWindow.axaml" />
     <None Include="Views\MainWindow.axaml" />
   </ItemGroup>

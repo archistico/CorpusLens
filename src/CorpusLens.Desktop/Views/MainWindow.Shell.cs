@@ -228,12 +228,12 @@ public sealed partial class MainWindow
     {
         Grid topGrid = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*,Auto"),
+            ColumnDefinitions = new ColumnDefinitions("Auto,Auto,260,Auto,*,Auto,Auto"),
         };
 
         TextBlock title = new()
         {
-            Text = "CorpusLens",
+            Text = $"CorpusLens {viewModel.ApplicationVersion}",
             FontSize = 22,
             FontWeight = FontWeight.SemiBold,
             VerticalAlignment = VerticalAlignment.Center,
@@ -251,7 +251,34 @@ public sealed partial class MainWindow
         Grid.SetColumn(openButton, 1);
         topGrid.Children.Add(openButton);
 
-        Grid.SetColumn(databasePathText, 2);
+        ComboBox recentDatabases = new()
+        {
+            ItemsSource = viewModel.RecentDatabasePaths,
+            SelectedItem = viewModel.SelectedRecentDatabase,
+            PlaceholderText = "Recent databases",
+            Margin = new Thickness(8, 0, 0, 0),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            IsEnabled = !viewModel.IsBusy,
+        };
+        recentDatabases.SelectionChanged += (_, _) =>
+        {
+            viewModel.SelectedRecentDatabase = recentDatabases.SelectedItem as string;
+        };
+        Grid.SetColumn(recentDatabases, 2);
+        topGrid.Children.Add(recentDatabases);
+
+        Button openRecentButton = new()
+        {
+            Content = "Open recent",
+            Margin = new Thickness(8, 0, 0, 0),
+        };
+        openRecentButton.Click += async (_, _) =>
+            await viewModel.OpenSelectedRecentDatabaseAsync().ConfigureAwait(true);
+        DisableWhileBusy(openRecentButton, viewModel);
+        Grid.SetColumn(openRecentButton, 3);
+        topGrid.Children.Add(openRecentButton);
+
+        Grid.SetColumn(databasePathText, 4);
         topGrid.Children.Add(databasePathText);
 
         Button refreshButton = new()
@@ -261,8 +288,33 @@ public sealed partial class MainWindow
         };
         refreshButton.Click += async (_, _) => await viewModel.RefreshRunsAsync().ConfigureAwait(true);
         DisableWhileBusy(refreshButton, viewModel);
-        Grid.SetColumn(refreshButton, 3);
+        Grid.SetColumn(refreshButton, 5);
         topGrid.Children.Add(refreshButton);
+
+        Button logsButton = new()
+        {
+            Content = "Logs",
+            Margin = new Thickness(8, 0, 0, 0),
+        };
+        logsButton.Click += async (_, _) =>
+            await viewModel.OpenDiagnosticLogDirectoryAsync().ConfigureAwait(true);
+        DisableWhileBusy(logsButton, viewModel);
+        Grid.SetColumn(logsButton, 6);
+        topGrid.Children.Add(logsButton);
+
+        viewModel.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(MainWindowViewModel.SelectedRecentDatabase)
+                && !Equals(recentDatabases.SelectedItem, viewModel.SelectedRecentDatabase))
+            {
+                recentDatabases.SelectedItem = viewModel.SelectedRecentDatabase;
+            }
+
+            if (args.PropertyName == nameof(MainWindowViewModel.IsBusy))
+            {
+                recentDatabases.IsEnabled = !viewModel.IsBusy;
+            }
+        };
 
         return topGrid;
     }

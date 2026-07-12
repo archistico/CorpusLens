@@ -1,7 +1,8 @@
+using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Styling;
 using Avalonia.Themes.Fluent;
 using AvaloniaApplication = Avalonia.Application;
-using Avalonia.Controls.ApplicationLifetimes;
+using CorpusLens.Desktop.Services;
 using CorpusLens.Desktop.ViewModels;
 using CorpusLens.Desktop.Views;
 
@@ -19,7 +20,12 @@ public sealed partial class App : AvaloniaApplication
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            desktop.MainWindow = new MainWindow(new MainWindowViewModel());
+            MainWindowViewModel viewModel = new(
+                settingsStore: DesktopRuntime.SettingsStore,
+                diagnosticLog: DesktopRuntime.DiagnosticLog);
+            MainWindow window = new(viewModel);
+            window.Opened += async (_, _) => await viewModel.InitializeAsync().ConfigureAwait(true);
+            desktop.MainWindow = window;
         }
 
         base.OnFrameworkInitializationCompleted();

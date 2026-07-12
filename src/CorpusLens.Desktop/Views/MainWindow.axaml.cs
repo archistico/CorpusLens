@@ -8,11 +8,12 @@ public sealed partial class MainWindow : Window
     public MainWindow(MainWindowViewModel viewModel)
     {
         DataContext = viewModel;
-        Title = "CorpusLens";
-        Width = 1280;
-        Height = 820;
+        Title = $"CorpusLens {viewModel.ApplicationVersion}";
+        Width = viewModel.InitialWindowWidth;
+        Height = viewModel.InitialWindowHeight;
         MinWidth = 980;
         MinHeight = 640;
         Content = BuildContent(viewModel, this);
+        Closing += (_, _) => viewModel.RememberWindowSize(Bounds.Width, Bounds.Height);
     }
 }

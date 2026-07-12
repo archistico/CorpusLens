@@ -206,7 +206,33 @@ The Avalonia desktop project is available as an early shell:
 make desktop
 ```
 
-The desktop app can open an existing `corpuslens.db`, list and filter corpora, create a corpus with a validated language, and run a complete EPUB-folder analysis without using the terminal. The analysis panel selects input/output folders, supports recursive scanning, displays stage and file counters, allows cooperative cancellation, opens import diagnostics, refreshes the run list and selects the completed run automatically. Corpus creation and EPUB analysis are explicit persistent writes and require confirmation in the UI. Supported corpus languages are English, Italian, French and German. The app also browses ordered source books and chapters, previews persisted clean text, displays a compact run dashboard, and includes word, n-gram, collocation, phrase, comparison, and reports/exports explorers. Database, explorer and analysis operations run asynchronously so the UI stays responsive.
+The desktop app can open an existing `corpuslens.db`, remember the last database and up to eight recent database paths, list and filter corpora, create a corpus with a validated language, and run a complete EPUB-folder analysis without using the terminal. The analysis panel restores the latest non-sensitive folder preferences, supports recursive scanning, displays stage and file counters, allows cooperative cancellation, opens import diagnostics, refreshes the run list and selects the completed run automatically. Corpus creation and EPUB analysis are explicit persistent writes and require confirmation in the UI. Supported corpus languages are English, Italian, French and German. The app also browses ordered source books and chapters, previews persisted clean text, displays a compact run dashboard, and includes word, n-gram, collocation, phrase, comparison, and reports/exports explorers. Database, explorer and analysis operations run asynchronously so the UI stays responsive. Daily diagnostic logs are available from the top bar.
+
+
+## Windows x64 package
+
+Build a self-contained portable package with:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\publish-win-x64.ps1
+```
+
+or:
+
+```powershell
+make publish-win-x64
+```
+
+The script creates `dist/CorpusLens-win-x64-18.15.0.zip` and its SHA-256 file. It performs a safety scan and refuses to package SQLite databases, EPUB files, extracted text or local import diagnostics. The self-contained package can run on Windows x64 without the .NET SDK.
+
+Desktop settings and logs are stored outside the application directory:
+
+```text
+%LOCALAPPDATA%\CorpusLens\settings.json
+%LOCALAPPDATA%\CorpusLens\logs\corpuslens-YYYYMMDD.log
+```
+
+See `docs/distribution-windows.md` and `docs/user-guide-desktop.md`.
 
 ## Development
 
@@ -233,6 +259,9 @@ make check
 - `docs/milestone-18-12-report-export.md`
 - `docs/milestone-18-13-corpus-management.md`
 - `docs/milestone-18-14-desktop-epub-analysis.md`
+- `docs/milestone-18-15-stabilization-distribution.md`
+- `docs/user-guide-desktop.md`
+- `docs/distribution-windows.md`
 
 ### Desktop word explorer
 
@@ -247,7 +276,7 @@ Run the Avalonia desktop shell with:
 make desktop
 ```
 
-The desktop UI can open an existing `corpuslens.db`, list and create corpora, analyze EPUB folders into the selected corpus, filter analysis runs by corpus, browse source books and their metadata, inspect ordered chapters and persisted clean text, show a run dashboard, inspect and open generated reports/exports, search words, explore n-grams, explore collocations, explore recurring phrases, and compare runs.
+The desktop UI can open an existing `corpuslens.db`, restore the last database, reopen recent databases, list and create corpora, analyze EPUB folders into the selected corpus, filter analysis runs by corpus, browse source books and their metadata, inspect ordered chapters and persisted clean text, show a run dashboard, inspect and open generated reports/exports, search words, explore n-grams, explore collocations, explore recurring phrases, and compare runs. Window size and the latest EPUB input/output preferences are stored locally, while recoverable and critical errors are written to daily diagnostic logs.
 
 
 ### Desktop corpus management

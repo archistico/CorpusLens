@@ -1,14 +1,14 @@
 # CorpusLens — Roadmap nuove milestone
 
-Versione: 0.6
-Stato: pianificazione operativa
+Versione: 0.7
+Stato: ciclo Desktop 18 completato; validazione finale in corso
 Ambito: storico delle milestone implementate e pianificazione dell’evoluzione desktop.
 
 ---
 
 ## 1. Stato attuale del progetto
 
-La base corrente arriva alla **Milestone 18.14 — Analisi EPUB dalla UI**.
+La base corrente arriva alla **Milestone 18.15 — Stabilizzazione e distribuzione**.
 
 CorpusLens dispone di:
 
@@ -24,9 +24,13 @@ CorpusLens dispone di:
 * persistenza SQLite di corpus, libri, capitoli, run e statistiche;
 * CLI completa per analisi e interrogazione;
 * applicazione desktop Avalonia con apertura database, gestione corpus, analisi di cartelle EPUB, filtro run, dashboard, Books explorer, Chapters explorer, report/export explorer, word explorer, N-gram explorer, collocations explorer, phrase explorer e confronto run;
-* caricamento asincrono delle principali viste desktop e della pipeline EPUB, con avanzamento, annullamento cooperativo e selezione automatica della nuova run.
+* caricamento asincrono delle principali viste desktop e della pipeline EPUB, con avanzamento, annullamento cooperativo e selezione automatica della nuova run;
+* ripristino dell’ultimo database, elenco dei database recenti e preferenze desktop locali;
+* logging diagnostico giornaliero e gestione centralizzata degli errori critici;
+* pubblicazione self-contained `win-x64`, metadati applicativi, icona e controllo anti-dati-locali nel pacchetto;
+* manuale utente e istruzioni di distribuzione/aggiornamento.
 
-La prossima fase pianificata è la **Milestone 18.15 — Stabilizzazione e distribuzione**. La gestione corpus della Milestone 18.13 è validata; l’analisi EPUB desktop della Milestone 18.14 è implementata e attende la verifica finale con build e test.
+Il ciclo Desktop pianificato dalle milestone 18.9–18.15 è completo. Restano la validazione finale con build, test e pubblicazione `win-x64`, quindi l’eventuale pianificazione di una nuova fase funzionale.
 
 ---
 
@@ -1554,7 +1558,7 @@ Passare dalla sola consultazione delle run esistenti alla gestione dei corpus da
 
 ### Stato
 
-IMPLEMENTATA — DA VALIDARE CON BUILD E TEST.
+VALIDATA — BUILD, TEST E FLUSSO DESKTOP CONFERMATI.
 
 ### Obiettivo
 
@@ -1597,32 +1601,46 @@ Consentire l'avvio completo di una nuova analisi EPUB dal desktop, mantenendo la
 
 ### Stato
 
-PIANIFICATA.
+IMPLEMENTATA — DA VALIDARE CON BUILD, TEST E PUBBLICAZIONE `win-x64`.
 
 ### Obiettivo
 
-Preparare CorpusLens Desktop per un utilizzo regolare e per la distribuzione su Windows.
+Preparare CorpusLens Desktop per un utilizzo regolare e per la distribuzione portabile su Windows x64.
 
-### Funzioni previste
+### Interventi completati
 
-* memorizzazione dell'ultimo database aperto;
-* elenco dei database recenti;
-* persistenza delle preferenze desktop non sensibili;
-* gestione uniforme degli errori non gestiti;
-* logging diagnostico locale;
-* test di integrazione dei principali flussi desktop;
-* pubblicazione `win-x64`;
-* definizione di versione, icona e metadati applicativi;
-* pacchetto distribuibile e istruzioni di installazione/aggiornamento;
-* breve manuale utente per apertura database, esplorazione e nuova analisi.
+* aggiunti `DesktopSettings` e `JsonDesktopSettingsStore` per preferenze locali non sensibili;
+* salvataggio in `%LOCALAPPDATA%\CorpusLens\settings.json` con scrittura tramite file temporaneo;
+* memorizzazione dell’ultimo database aperto e di un massimo di otto database recenti;
+* ripristino automatico dell’ultimo database disponibile all’avvio;
+* rimozione automatica dei percorsi recenti non più esistenti;
+* persistenza delle ultime cartelle EPUB/output, scansione ricorsiva e dimensione della finestra;
+* aggiunto selettore dei database recenti nella barra superiore;
+* aggiunto logging giornaliero in `%LOCALAPPDATA%\CorpusLens\logs`;
+* gli errori delle operazioni asincrone mantengono il messaggio sintetico nella status bar e registrano i dettagli nel log;
+* gestione centralizzata di eccezioni di dominio applicativo, task non osservati e arresti critici;
+* dialogo nativo Windows per gli errori fatali con indicazione del percorso del log;
+* pulsante **Logs** per aprire la cartella diagnostica;
+* versione applicativa `18.15.0`, metadati assembly, icona, manifest `asInvoker`, DPI awareness e long-path awareness;
+* script `scripts/publish-win-x64.ps1` per pubblicazione Release, self-contained e single-file;
+* generazione ZIP e checksum SHA-256 in `dist/`;
+* controllo di sicurezza che blocca il packaging se trova database, EPUB, extracted text o diagnostici locali;
+* `dist/` esclusa dal versionamento;
+* smoke test per settings, fallback JSON, log, startup, corpus, recenti e preferenze;
+* aggiunti manuale utente e guida di distribuzione Windows.
 
 ### Criteri di accettazione
 
-* l'applicazione pubblicata si avvia su una macchina Windows supportata senza SDK .NET installato, se distribuita self-contained;
-* apertura database, navigazione e analisi EPUB sono coperte da smoke test;
-* impostazioni e percorsi recenti sono recuperati correttamente al riavvio;
-* gli errori critici producono un messaggio utile e un log diagnostico;
-* il pacchetto non contiene database, libri o artefatti locali dell'ambiente di sviluppo.
+* `dotnet build` completa senza errori o warning trattati come errori;
+* `dotnet test` completa tutti i test, inclusi gli smoke test Desktop;
+* `scripts/publish-win-x64.ps1` produce ZIP e checksum;
+* il pacchetto self-contained si avvia su Windows x64 senza SDK .NET;
+* l’ultimo database e le preferenze vengono ripristinati al riavvio;
+* un database recente mancante viene rimosso senza bloccare l’applicazione;
+* gli errori recuperabili producono status utile e dettaglio nel log;
+* un errore critico indica il percorso del log diagnostico;
+* il pacchetto non contiene database, libri o artefatti locali;
+* apertura database, caricamento corpus e pipeline EPUB restano coperti dai test.
 
 ---
 

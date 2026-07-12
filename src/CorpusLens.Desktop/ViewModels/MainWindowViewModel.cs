@@ -3,6 +3,7 @@ using System.ComponentModel;
 using CorpusLens.Application.EpubAnalysis;
 using CorpusLens.Application.Queries;
 using CorpusLens.Application.Storage;
+using CorpusLens.Desktop.Services;
 using CorpusLens.Domain.Storage;
 
 namespace CorpusLens.Desktop.ViewModels;
@@ -10,9 +11,13 @@ namespace CorpusLens.Desktop.ViewModels;
 public sealed class MainWindowViewModel : ViewModelBase
 {
     private readonly Func<string, CancellationToken, Task<IReadOnlyList<StoredAnalysisRunSummary>>> _runLoader;
+    private readonly IDesktopSettingsStore _settingsStore;
+    private readonly IDesktopDiagnosticLog _diagnosticLog;
+    private DesktopSettings _settings;
     private CancellationTokenSource? _currentOperationCancellation;
     private long _operationVersion;
     private string _databasePath = "No database selected";
+    private string? _selectedRecentDatabase;
     private RunListItemViewModel? _selectedRun;
 
     public MainWindowViewModel(
@@ -28,8 +33,13 @@ public sealed class MainWindowViewModel : ViewModelBase
         CorpusManagementViewModel? corpora = null,
         EpubAnalysisViewModel? epubAnalysis = null,
         DesktopOperationStateViewModel? operationState = null,
-        Func<string, CancellationToken, Task<IReadOnlyList<StoredAnalysisRunSummary>>>? runLoader = null)
+        Func<string, CancellationToken, Task<IReadOnlyList<StoredAnalysisRunSummary>>>? runLoader = null,
+        IDesktopSettingsStore? settingsStore = null,
+        IDesktopDiagnosticLog? diagnosticLog = null)
     {
+        _settingsStore = settingsStore ?? new InMemoryDesktopSettingsStore();
+        _diagnosticLog = diagnosticLog ?? new NullDesktopDiagnosticLog();
+        _settings = _settingsStore.Load().Normalize();
         Dashboard = dashboard ?? new DashboardViewModel();
         Books = books ?? new BooksExplorerViewModel();
         ChaptersExplorer = chaptersExplorer ?? new ChaptersExplorerViewModel();
@@ -43,6 +53,12 @@ public sealed class MainWindowViewModel : ViewModelBase
         EpubAnalysis = epubAnalysis ?? new EpubAnalysisViewModel();
         OperationState = operationState ?? new DesktopOperationStateViewModel();
         _runLoader = runLoader ?? LoadRunsFromApplicationAsync;
+
+        foreach (string recentDatabasePath in _settings.RecentDatabasePaths)
+        {
+            RecentDatabasePaths.Add(recentDatabasePath);
+        }
+        SelectedRecentDatabase = RecentDatabasePaths.FirstOrDefault();
 
         ForwardPropertyChanges(Dashboard);
         ForwardPropertyChanges(Books);
@@ -131,11 +147,37 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     public DesktopOperationStateViewModel OperationState { get; }
 
+    public string ApplicationVersion { get; } = typeof(MainWindowViewModel).Assembly
+        .GetName()
+        .Version?.ToString(3) ?? "18.15.0";
+
     public string DatabasePath
     {
         get => _databasePath;
         private set => SetProperty(ref _databasePath, value);
     }
+
+    public ObservableCollection<string> RecentDatabasePaths { get; } = new();
+
+    public string? SelectedRecentDatabase
+    {
+        get => _selectedRecentDatabase;
+        set => SetProperty(ref _selectedRecentDatabase, value);
+    }
+
+    public double InitialWindowWidth => _settings.WindowWidth;
+
+    public double InitialWindowHeight => _settings.WindowHeight;
+
+    public string PreferredEpubInputFolder => _settings.LastEpubInputFolder;
+
+    public string PreferredEpubOutputFolder => _settings.LastEpubOutputFolder;
+
+    public bool PreferredRecursiveEpubSearch => _settings.RecursiveEpubSearch;
+
+    public string SettingsPath => _settingsStore.SettingsPath;
+
+    public string DiagnosticLogPath => _diagnosticLog.CurrentLogPath;
 
     public ObservableCollection<RunListItemViewModel> Runs { get; } = new();
 
@@ -317,6 +359,101 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     public ComparisonPresenceFilter ComparisonPresenceFilter => CompareRuns.ComparisonPresenceFilter;
 
+    public async Task InitializeAsync(CancellationToken cancellationToken = default)
+    {
+        string lastDatabasePath = _settings.LastDatabasePath;
+        if (string.IsNullOrWhiteSpace(lastDatabasePath))
+        {
+            OperationState.SetStatus("Ready. Open a CorpusLens SQLite database to begin.");
+            return;
+        }
+
+        if (!File.Exists(lastDatabasePath))
+        {
+            RemoveRecentDatabase(lastDatabasePath);
+            OperationState.SetStatus("The last database is no longer available. Choose another database.");
+            return;
+        }
+
+        _diagnosticLog.WriteInformation($"Restoring last database: {lastDatabasePath}");
+        await OpenDatabaseAsync(lastDatabasePath, cancellationToken).ConfigureAwait(true);
+    }
+
+    public async Task OpenSelectedRecentDatabaseAsync(CancellationToken cancellationToken = default)
+    {
+        string path = SelectedRecentDatabase?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            OperationState.SetStatus("Select a recent database first.");
+            return;
+        }
+
+        if (!File.Exists(path))
+        {
+            RemoveRecentDatabase(path);
+            OperationState.SetStatus($"Recent database not found and removed from the list: {path}");
+            return;
+        }
+
+        await OpenDatabaseAsync(path, cancellationToken).ConfigureAwait(true);
+    }
+
+    public void RememberEpubPreferences(string? inputFolder, string? outputFolder, bool recursive)
+    {
+        _settings = _settings with
+        {
+            LastEpubInputFolder = inputFolder?.Trim() ?? string.Empty,
+            LastEpubOutputFolder = outputFolder?.Trim() ?? string.Empty,
+            RecursiveEpubSearch = recursive,
+        };
+        SaveSettings();
+    }
+
+    public void RememberWindowSize(double width, double height)
+    {
+        if (!double.IsFinite(width) || !double.IsFinite(height))
+        {
+            return;
+        }
+
+        _settings = _settings with
+        {
+            WindowWidth = width,
+            WindowHeight = height,
+        };
+        SaveSettings();
+    }
+
+    public async Task OpenDiagnosticLogDirectoryAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(_diagnosticLog.LogDirectory))
+            {
+                OperationState.SetStatus("Diagnostic logging is not configured for this session.");
+                return;
+            }
+
+            Directory.CreateDirectory(_diagnosticLog.LogDirectory);
+            await SystemPathLauncher
+                .OpenAsync(
+                    _diagnosticLog.LogDirectory,
+                    isDirectory: true,
+                    cancellationToken: cancellationToken)
+                .ConfigureAwait(true);
+            OperationState.SetStatus($"Opened diagnostic logs: {_diagnosticLog.LogDirectory}");
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            OperationState.SetStatus("Opening diagnostic logs was cancelled.");
+        }
+        catch (Exception exception)
+        {
+            _diagnosticLog.WriteError("Could not open the diagnostic-log folder.", exception);
+            OperationState.SetStatus($"Could not open diagnostic logs: {exception.Message}");
+        }
+    }
+
     public async Task OpenDatabaseAsync(string databasePath, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(databasePath))
@@ -324,13 +461,25 @@ public sealed class MainWindowViewModel : ViewModelBase
             return;
         }
 
-        if (!File.Exists(databasePath))
+        string normalizedDatabasePath;
+        try
         {
-            OperationState.SetStatus($"Database not found: {databasePath}");
+            normalizedDatabasePath = Path.GetFullPath(databasePath.Trim());
+        }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            _diagnosticLog.WriteError("Invalid database path.", exception);
+            OperationState.SetStatus($"Invalid database path: {exception.Message}");
             return;
         }
 
-        if (!string.Equals(DatabasePath, databasePath, StringComparison.OrdinalIgnoreCase))
+        if (!File.Exists(normalizedDatabasePath))
+        {
+            OperationState.SetStatus($"Database not found: {normalizedDatabasePath}");
+            return;
+        }
+
+        if (!string.Equals(DatabasePath, normalizedDatabasePath, StringComparison.OrdinalIgnoreCase))
         {
             Runs.Clear();
             VisibleRuns.Clear();
@@ -338,7 +487,9 @@ public sealed class MainWindowViewModel : ViewModelBase
             ClearSelectedRun("Loading runs from database...");
         }
 
-        DatabasePath = databasePath;
+        DatabasePath = normalizedDatabasePath;
+        RememberDatabase(normalizedDatabasePath);
+        _diagnosticLog.WriteInformation($"Opening database: {normalizedDatabasePath}");
         await RefreshRunsAsync(cancellationToken).ConfigureAwait(true);
     }
 
@@ -467,6 +618,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         bool confirmed,
         CancellationToken cancellationToken = default)
     {
+        RememberEpubPreferences(inputFolder, outputDirectory, recursive);
         if (!EpubAnalysis.TryCreateRequest(
             DatabasePath,
             SelectedCorpus,
@@ -934,6 +1086,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
+            _diagnosticLog.WriteError(errorPrefix, ex);
             OperationState.SetStatus($"{errorPrefix}: {ex.Message}");
         }
     }
@@ -982,6 +1135,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
+            _diagnosticLog.WriteError($"Could not load artifacts for run {runId}.", ex);
             ArtifactExplorer.Clear($"Could not load reports and exports: {ex.Message}");
         }
     }
@@ -1001,6 +1155,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
+            _diagnosticLog.WriteError($"Could not load source books for run {runId}.", ex);
             Books.Clear($"Could not load source books: {ex.Message}");
             ChaptersExplorer.Clear("Chapters cannot be loaded because the source-book list is unavailable.");
             return;
@@ -1025,6 +1180,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
+            _diagnosticLog.WriteError($"Could not load chapters for run {runId}.", ex);
             ChaptersExplorer.Clear($"Could not load chapters: {ex.Message}");
         }
     }
@@ -1104,6 +1260,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
+            _diagnosticLog.WriteError(startMessage, ex);
             if (operationVersion == Volatile.Read(ref _operationVersion))
             {
                 onError?.Invoke(ex);
@@ -1132,6 +1289,63 @@ public sealed class MainWindowViewModel : ViewModelBase
                 OnPropertyChanged(args.PropertyName);
             }
         };
+    }
+
+    private void RememberDatabase(string databasePath)
+    {
+        List<string> recent = _settings.RecentDatabasePaths
+            .Where(path => !string.Equals(path, databasePath, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        recent.Insert(0, databasePath);
+        _settings = _settings with
+        {
+            LastDatabasePath = databasePath,
+            RecentDatabasePaths = recent.Take(DesktopSettings.MaxRecentDatabases).ToList(),
+        };
+        SaveSettings();
+        RebuildRecentDatabaseList(databasePath);
+    }
+
+    private void RemoveRecentDatabase(string databasePath)
+    {
+        List<string> recent = _settings.RecentDatabasePaths
+            .Where(path => !string.Equals(path, databasePath, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        _settings = _settings with
+        {
+            LastDatabasePath = string.Equals(
+                _settings.LastDatabasePath,
+                databasePath,
+                StringComparison.OrdinalIgnoreCase)
+                ? string.Empty
+                : _settings.LastDatabasePath,
+            RecentDatabasePaths = recent,
+        };
+        SaveSettings();
+        RebuildRecentDatabaseList(recent.FirstOrDefault());
+    }
+
+    private void RebuildRecentDatabaseList(string? selectedPath)
+    {
+        RecentDatabasePaths.Clear();
+        foreach (string recentDatabasePath in _settings.RecentDatabasePaths)
+        {
+            RecentDatabasePaths.Add(recentDatabasePath);
+        }
+
+        SelectedRecentDatabase = !string.IsNullOrWhiteSpace(selectedPath)
+            && RecentDatabasePaths.Contains(selectedPath, StringComparer.OrdinalIgnoreCase)
+                ? RecentDatabasePaths.First(path => string.Equals(
+                    path,
+                    selectedPath,
+                    StringComparison.OrdinalIgnoreCase))
+                : RecentDatabasePaths.FirstOrDefault();
+    }
+
+    private void SaveSettings()
+    {
+        _settings = _settings.Normalize();
+        _settingsStore.Save(_settings);
     }
 
     private static Task<IReadOnlyList<StoredAnalysisRunSummary>> LoadRunsFromApplicationAsync(

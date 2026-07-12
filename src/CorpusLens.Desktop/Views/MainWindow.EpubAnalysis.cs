@@ -20,6 +20,7 @@ public sealed partial class MainWindow
 
         TextBox inputFolder = new()
         {
+            Text = viewModel.PreferredEpubInputFolder,
             PlaceholderText = "Folder containing EPUB files",
             HorizontalAlignment = HorizontalAlignment.Stretch,
         };
@@ -40,6 +41,7 @@ public sealed partial class MainWindow
 
         TextBox outputFolder = new()
         {
+            Text = viewModel.PreferredEpubOutputFolder,
             PlaceholderText = "Folder for report.md, CSV files and extracted_text.txt",
             HorizontalAlignment = HorizontalAlignment.Stretch,
         };
@@ -61,6 +63,7 @@ public sealed partial class MainWindow
         CheckBox recursive = new()
         {
             Content = "Include EPUB files in subfolders",
+            IsChecked = viewModel.PreferredRecursiveEpubSearch,
         };
         CheckBox confirmation = new()
         {

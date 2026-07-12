@@ -1727,3 +1727,30 @@ The Desktop layer performs folder picking, explicit confirmation, progress prese
 Database writes begin only after EPUB extraction and artifact generation succeed. The save use case tracks every new aggregate/source book id. On cancellation or failure, `SqliteCorpusStore.DeleteBooksAsync` removes those ids transactionally; foreign-key cascades remove dependent chapters, run rows, statistics, links and token occurrences. Files already emitted to the chosen output folder are not deleted by compensation.
 
 After success, `MainWindowViewModel` reloads the common run collection, keeps the selected corpus and invokes the normal run-selection pipeline for the new run id. No special dashboard or explorer loading path is introduced.
+
+## Desktop runtime stabilization and distribution
+
+Milestone 18.15 adds a small runtime-services boundary around the existing Desktop ViewModels:
+
+```text
+Program / App
+  -> DesktopRuntime
+     -> JsonDesktopSettingsStore
+     -> DesktopDiagnosticLog
+  -> MainWindowViewModel
+     -> application query/use-case services
+```
+
+`DesktopSettings` contains only non-sensitive presentation state: recent database paths, EPUB/output folder preferences, recursive-search preference and window dimensions. `JsonDesktopSettingsStore` writes the normalized object to `%LOCALAPPDATA%/CorpusLens/settings.json` through a temporary file. The default ViewModel constructor uses in-memory/null implementations so unit tests and non-hosted instances do not write to the real user profile; `App` explicitly injects the persistent runtime services.
+
+The application startup path subscribes to standard .NET unhandled-exception and unobserved-task events. `MainWindowViewModel.ExecuteBusyAsync` remains the uniform recoverable-error boundary: it updates the status bar and also writes the exception to the diagnostic log. Fatal Windows errors use a minimal native dialog because the Avalonia dispatcher may no longer be reliable at that point.
+
+Daily diagnostic files are stored outside the executable directory:
+
+```text
+%LOCALAPPDATA%/CorpusLens/logs/corpuslens-YYYYMMDD.log
+```
+
+The Windows publication path is intentionally separate from normal builds. `scripts/publish-win-x64.ps1` performs a Release self-contained single-file publish, verifies the expected executable, scans the publication tree for corpus data, creates a ZIP and emits a SHA-256 checksum. Trimming is disabled because the current Avalonia and application stack is not being certified for trimmed publication in this milestone.
+
+Application metadata and the Windows manifest are owned by `CorpusLens.Desktop.csproj`. Database files, EPUB files, artifacts, settings and logs are never embedded as project content. The generated `dist/` directory is ignored by source control.
