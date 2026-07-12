@@ -10,10 +10,13 @@ public sealed class CreateCorpusUseCase
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.DatabasePath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.Name);
 
+        string languageCode = CorpusLanguageCatalog.NormalizeSupportedCode(request.LanguageCode);
         SqliteCorpusStore store = new(request.DatabasePath);
         return await store
-            .CreateCorpusAsync(request.Name, request.LanguageCode, request.Description, cancellationToken)
+            .CreateCorpusAsync(request.Name, languageCode, request.Description, cancellationToken)
             .ConfigureAwait(false);
     }
 }

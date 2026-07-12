@@ -1,4 +1,5 @@
 using CorpusLens.Application.Queries;
+using CorpusLens.Application.Storage;
 using CorpusLens.Desktop.ViewModels;
 using CorpusLens.Domain.Analysis;
 using CorpusLens.Domain.Books;
@@ -561,6 +562,155 @@ public sealed class DesktopViewModelTests
         Assert.Equal(2, openedTargets.Count);
     }
 
+
+    [Fact]
+    public void CorpusLanguageCatalog_NormalizesSupportedRegionalCodes()
+    {
+        Assert.True(CorpusLanguageCatalog.TryNormalizeSupportedCode("IT-it", out string italian));
+        Assert.Equal("it", italian);
+        Assert.False(CorpusLanguageCatalog.TryNormalizeSupportedCode("es", out _));
+        Assert.Equal(4, CorpusLanguageCatalog.ListSupportedLanguages().Count);
+    }
+
+    [Fact]
+    public async Task CorpusManagement_LoadsCorporaWithRunCountsAndFiltersLanguage()
+    {
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        StoredCorpus[] storedCorpora =
+        {
+            new(10, "English", "en", "English books", now, now),
+            new(11, "Italian", "it", "Italian books", now, now),
+        };
+        CorpusManagementViewModel viewModel = new(
+            (_, _) => Task.FromResult<IReadOnlyList<StoredCorpus>>(storedCorpora));
+        RunListItemViewModel[] runs =
+        {
+            new(CreateRun(1, 10, "English")),
+            new(CreateRun(2, 10, "English")),
+            new(CreateRun(3, 11, "Italian")),
+        };
+
+        await viewModel.LoadAsync("corpuslens.db", runs);
+
+        Assert.Equal(3, viewModel.Corpora.Count);
+        Assert.True(viewModel.Corpora[0].IsAllCorpora);
+        Assert.Equal(3, viewModel.Corpora[0].RunCount);
+        Assert.Equal(2, viewModel.Corpora.Single(item => item.Id == 10).RunCount);
+        Assert.Equal(1, viewModel.Corpora.Single(item => item.Id == 11).RunCount);
+        Assert.Contains("Corpora: 2", viewModel.Summary);
+        Assert.False(viewModel.TryValidateCreateInput(
+            " italian ",
+            "it",
+            out _,
+            out _,
+            out string duplicateError));
+        Assert.Contains("already exists", duplicateError);
+
+        CorpusListItemViewModel italian = viewModel.Corpora.Single(item => item.Id == 11);
+        viewModel.SetSelectedCorpus(italian);
+
+        Assert.True(viewModel.IsSelectedCorpusLanguageCompatible("it-IT"));
+        Assert.False(viewModel.IsSelectedCorpusLanguageCompatible("en"));
+        Assert.Contains("Language: it", viewModel.Details);
+    }
+
+    [Fact]
+    public async Task CorpusManagement_CreatesNormalizedCorpusAndSelectsIt()
+    {
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        CreateCorpusRequest? capturedRequest = null;
+        CorpusManagementViewModel viewModel = new(
+            (_, _) => Task.FromResult<IReadOnlyList<StoredCorpus>>(Array.Empty<StoredCorpus>()),
+            (request, _) =>
+            {
+                capturedRequest = request;
+                return Task.FromResult(new StoredCorpus(
+                    42,
+                    request.Name,
+                    request.LanguageCode,
+                    request.Description ?? string.Empty,
+                    now,
+                    now));
+            });
+        await viewModel.LoadAsync("corpuslens.db", Array.Empty<RunListItemViewModel>());
+
+        StoredCorpus created = await viewModel.CreateAsync(
+            "corpuslens.db",
+            "  French classics  ",
+            "fr-FR",
+            "  Public-domain corpus  ",
+            Array.Empty<RunListItemViewModel>());
+
+        Assert.NotNull(capturedRequest);
+        Assert.Equal("French classics", capturedRequest!.Name);
+        Assert.Equal("fr", capturedRequest.LanguageCode);
+        Assert.Equal("Public-domain corpus", capturedRequest.Description);
+        Assert.Equal(42, created.Id);
+        Assert.Equal(2, viewModel.Corpora.Count);
+        Assert.Equal(42, viewModel.SelectedCorpusId);
+        Assert.False(viewModel.SelectedCorpus!.IsAllCorpora);
+    }
+
+    [Fact]
+    public async Task CreateCorpusUseCase_RejectsUnsupportedLanguageBeforeWritingDatabase()
+    {
+        string directoryPath = Path.Combine(
+            Path.GetTempPath(),
+            $"corpuslens-unsupported-language-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directoryPath);
+        string databasePath = Path.Combine(directoryPath, "corpuslens.db");
+        try
+        {
+            CreateCorpusUseCase useCase = new();
+
+            ArgumentException exception = await Assert.ThrowsAsync<ArgumentException>(
+                () => useCase.ExecuteAsync(new CreateCorpusRequest(
+                    databasePath,
+                    "Spanish",
+                    "es",
+                    null)));
+
+            Assert.Contains("Unsupported corpus language", exception.Message);
+            Assert.False(File.Exists(databasePath));
+        }
+        finally
+        {
+            Directory.Delete(directoryPath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task MainWindow_CreateCorpusRequiresExplicitConfirmation()
+    {
+        string databasePath = Path.GetTempFileName();
+        bool creatorCalled = false;
+        try
+        {
+            CorpusManagementViewModel corpora = new(
+                (_, _) => Task.FromResult<IReadOnlyList<StoredCorpus>>(Array.Empty<StoredCorpus>()),
+                (_, _) =>
+                {
+                    creatorCalled = true;
+                    return Task.FromException<StoredCorpus>(
+                        new InvalidOperationException("Creator should not be called."));
+                });
+            MainWindowViewModel viewModel = new(
+                corpora: corpora,
+                runLoader: (_, _) => Task.FromResult<IReadOnlyList<StoredAnalysisRunSummary>>(
+                    Array.Empty<StoredAnalysisRunSummary>()));
+            await viewModel.OpenDatabaseAsync(databasePath);
+
+            await viewModel.CreateCorpusAsync("Test", "en", null, confirmed: false);
+
+            Assert.False(creatorCalled);
+            Assert.Contains("Confirm the persistent write", viewModel.StatusMessage);
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
     private static ChapterExplorerItem CreateChapter(
         long id,
         int orderIndex,
@@ -589,9 +739,14 @@ public sealed class DesktopViewModelTests
 
     private static StoredAnalysisRunSummary CreateRun(long id, string corpusName)
     {
+        return CreateRun(id, 10, corpusName);
+    }
+
+    private static StoredAnalysisRunSummary CreateRun(long id, long corpusId, string corpusName)
+    {
         return new StoredAnalysisRunSummary(
             id,
-            10,
+            corpusId,
             corpusName,
             20,
             "EPUB folder: it",

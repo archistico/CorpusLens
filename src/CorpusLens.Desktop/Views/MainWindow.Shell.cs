@@ -18,6 +18,8 @@ public sealed partial class MainWindow
         databasePathText.Margin = new Thickness(12, 0, 0, 0);
 
         TextBlock statusText = CreateBoundText(viewModel, nameof(MainWindowViewModel.StatusMessage), () => viewModel.StatusMessage);
+        TextBlock corpusSummaryText = CreateBoundText(viewModel, nameof(MainWindowViewModel.CorpusSummary), () => viewModel.CorpusSummary);
+        TextBlock corpusDetailsText = CreateBoundText(viewModel, nameof(MainWindowViewModel.CorpusDetails), () => viewModel.CorpusDetails);
         TextBlock runTitleText = CreateBoundText(viewModel, nameof(MainWindowViewModel.RunTitle), () => viewModel.RunTitle);
         runTitleText.FontSize = 26;
         runTitleText.FontWeight = FontWeight.SemiBold;
@@ -120,7 +122,7 @@ public sealed partial class MainWindow
             Padding = new Thickness(16),
             BorderBrush = Brushes.LightGray,
             BorderThickness = new Thickness(0, 0, 1, 0),
-            Child = BuildRunsPanel(viewModel),
+            Child = BuildNavigationPanel(viewModel),
         };
         Grid.SetColumn(runsPanel, 0);
         body.Children.Add(runsPanel);
@@ -128,6 +130,8 @@ public sealed partial class MainWindow
         ScrollViewer mainArea = new()
         {
             Content = BuildMainArea(
+                corpusSummaryText,
+                corpusDetailsText,
                 runTitleText,
                 runSubtitleText,
                 coreMetricsText,
@@ -268,26 +272,74 @@ public sealed partial class MainWindow
             await viewModel.OpenDatabaseAsync(localPath).ConfigureAwait(true);
         }
     }
-    private static Control BuildRunsPanel(MainWindowViewModel viewModel)
+    private static Control BuildNavigationPanel(MainWindowViewModel viewModel)
     {
         Grid panel = new()
         {
-            RowDefinitions = new RowDefinitions("Auto,*"),
+            RowDefinitions = new RowDefinitions("Auto,Auto,Auto,Auto,*"),
         };
 
-        TextBlock heading = new()
+        TextBlock corpusHeading = new()
+        {
+            Text = "Corpora",
+            FontSize = 16,
+            FontWeight = FontWeight.SemiBold,
+            Margin = new Thickness(0, 0, 0, 8),
+        };
+        Grid.SetRow(corpusHeading, 0);
+        panel.Children.Add(corpusHeading);
+
+        ComboBox corpora = new()
+        {
+            ItemsSource = viewModel.CorpusItems,
+            SelectedItem = viewModel.SelectedCorpus,
+            IsEnabled = !viewModel.IsBusy,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+        };
+        corpora.SelectionChanged += async (_, _) =>
+        {
+            if (corpora.SelectedItem is CorpusListItemViewModel selectedCorpus
+                && !ReferenceEquals(selectedCorpus, viewModel.SelectedCorpus))
+            {
+                await viewModel.SelectCorpusAsync(selectedCorpus).ConfigureAwait(true);
+            }
+        };
+        viewModel.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(MainWindowViewModel.SelectedCorpus)
+                && !ReferenceEquals(corpora.SelectedItem, viewModel.SelectedCorpus))
+            {
+                corpora.SelectedItem = viewModel.SelectedCorpus;
+            }
+
+            if (args.PropertyName == nameof(MainWindowViewModel.IsBusy))
+            {
+                corpora.IsEnabled = !viewModel.IsBusy;
+            }
+        };
+        Grid.SetRow(corpora, 1);
+        panel.Children.Add(corpora);
+
+        Separator separator = new()
+        {
+            Margin = new Thickness(0, 14, 0, 14),
+        };
+        Grid.SetRow(separator, 2);
+        panel.Children.Add(separator);
+
+        TextBlock runHeading = new()
         {
             Text = "Runs",
             FontSize = 16,
             FontWeight = FontWeight.SemiBold,
             Margin = new Thickness(0, 0, 0, 12),
         };
-        Grid.SetRow(heading, 0);
-        panel.Children.Add(heading);
+        Grid.SetRow(runHeading, 3);
+        panel.Children.Add(runHeading);
 
         ListBox runs = new()
         {
-            ItemsSource = viewModel.Runs,
+            ItemsSource = viewModel.VisibleRuns,
             IsEnabled = !viewModel.IsBusy,
         };
         runs.SelectionChanged += async (_, _) =>
@@ -311,12 +363,14 @@ public sealed partial class MainWindow
                 runs.IsEnabled = !viewModel.IsBusy;
             }
         };
-        Grid.SetRow(runs, 1);
+        Grid.SetRow(runs, 4);
         panel.Children.Add(runs);
 
         return panel;
     }
     private static Control BuildMainArea(
+        TextBlock corpusSummaryText,
+        TextBlock corpusDetailsText,
         TextBlock runTitleText,
         TextBlock runSubtitleText,
         TextBlock coreMetricsText,
@@ -369,6 +423,7 @@ public sealed partial class MainWindow
             Spacing = 18,
         };
 
+        stack.Children.Add(BuildCorpusManagement(viewModel, corpusSummaryText, corpusDetailsText));
         stack.Children.Add(runTitleText);
         stack.Children.Add(runSubtitleText);
 

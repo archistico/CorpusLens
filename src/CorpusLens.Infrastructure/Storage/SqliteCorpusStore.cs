@@ -89,7 +89,9 @@ public sealed class SqliteCorpusStore
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await EnableForeignKeysAsync(connection, cancellationToken).ConfigureAwait(false);
 
+        using SqliteTransaction transaction = connection.BeginTransaction();
         await using SqliteCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             INSERT INTO Corpus (Name, LanguageCode, Description, CreatedAt, UpdatedAt)
             VALUES ($name, $languageCode, $description, $createdAt, $updatedAt);
@@ -109,7 +111,8 @@ public sealed class SqliteCorpusStore
             throw new InvalidOperationException($"A corpus named '{name}' already exists.", exception);
         }
 
-        long corpusId = await LastInsertRowIdAsync(connection, cancellationToken).ConfigureAwait(false);
+        long corpusId = await LastInsertRowIdAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
+        transaction.Commit();
         return new StoredCorpus(corpusId, name.Trim(), languageCode.Trim(), description?.Trim() ?? string.Empty, now, now);
     }
 

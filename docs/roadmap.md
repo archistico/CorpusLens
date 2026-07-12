@@ -23,10 +23,10 @@ CorpusLens dispone di:
 * indice persistente dei token con fallback per run legacy;
 * persistenza SQLite di corpus, libri, capitoli, run e statistiche;
 * CLI completa per analisi e interrogazione;
-* applicazione desktop Avalonia read-only con apertura database, elenco run, dashboard, Books explorer, Chapters explorer, report/export explorer, word explorer, N-gram explorer, collocations explorer, phrase explorer e confronto run;
+* applicazione desktop Avalonia con apertura database, gestione corpus, filtro run, dashboard, Books explorer, Chapters explorer, report/export explorer, word explorer, N-gram explorer, collocations explorer, phrase explorer e confronto run;
 * caricamento asincrono delle principali viste desktop, inclusa la navigazione libro → capitoli, le query n-gram e la risoluzione degli artefatti della run.
 
-La prossima fase pianificata copre le Milestone **18.13–18.15**: gestione corpus, analisi EPUB dalla UI e distribuzione Windows.
+La prossima fase pianificata copre le Milestone **18.14–18.15**: analisi EPUB dalla UI e distribuzione Windows. La gestione corpus della Milestone 18.13 è implementata e in attesa di validazione finale.
 
 ---
 
@@ -1359,7 +1359,7 @@ The desktop application now resolves the report and export paths stored for the 
 
 # Fase 8 — Evoluzione della UI desktop
 
-Le Milestone 18.9–18.12 consolidano la base desktop, completano la navigazione read-only fino al testo dei capitoli e alle statistiche n-gram e rendono accessibili report ed export; le Milestone **18.13–18.15** restano pianificate. Le operazioni di scrittura e l'analisi EPUB dalla UI vengono introdotte solo nelle fasi successive.
+Le Milestone 18.9–18.12 consolidano la base desktop e completano la consultazione read-only; la Milestone **18.13** introduce la prima operazione di scrittura controllata, cioè la creazione dei corpus. Le Milestone **18.14–18.15** restano pianificate per analisi EPUB dalla UI e distribuzione.
 
 ## Milestone 18.9 — Consolidamento architettura Desktop
 
@@ -1475,7 +1475,7 @@ Portare nella UI desktop l'esplorazione di bigrammi, trigrammi e altri n-grammi 
 
 ### Stato
 
-IMPLEMENTATA — DA VALIDARE CON BUILD E TEST.
+IMPLEMENTATA E VALIDATA — BUILD E TEST SUPERATI.
 
 ### Obiettivo
 
@@ -1512,30 +1512,41 @@ Rendere accessibili dalla UI desktop i report e gli artefatti generati durante l
 
 ### Stato
 
-PIANIFICATA.
+IMPLEMENTATA — DA VALIDARE CON BUILD E TEST.
 
 ### Obiettivo
 
 Passare dalla sola consultazione delle run esistenti alla gestione dei corpus dal desktop.
 
-### Funzioni previste
+### Interventi completati
 
-* elenco dei corpus salvati;
-* creazione di un corpus con nome e lingua;
-* visualizzazione delle run associate a ciascun corpus;
-* validazione dei codici lingua supportati;
-* controllo di coerenza tra corpus scelto e lingua dell'analisi;
-* eventuale rinomina del corpus, se compatibile con il modello dati;
-* servizi applicativi di scrittura dedicati;
-* conferme esplicite per le operazioni che modificano dati persistenti.
+* aggiunto `CorpusManagementViewModel` con caricamento e creazione iniettabili e testabili;
+* aggiunto un catalogo applicativo centralizzato delle lingue supportate (`en`, `it`, `fr`, `de`);
+* normalizzazione dei codici regionali, ad esempio `it-IT` → `it`;
+* validazione applicativa di nomi vuoti, nomi duplicati e lingue non supportate;
+* elenco dei corpus persistiti con descrizione, lingua, timestamp e numero di run caricate;
+* filtro **All corpora** e filtro per singolo corpus nel navigatore laterale;
+* visualizzazione delle sole run associate al corpus selezionato;
+* creazione di un corpus dalla UI con nome, lingua e descrizione opzionale;
+* conferma esplicita obbligatoria prima della scrittura persistente;
+* selezione automatica del corpus appena creato;
+* contratto `IsSelectedCorpusLanguageCompatible` predisposto per bloccare incoerenze nella Milestone 18.14;
+* `CreateCorpusUseCase` mantiene la validazione fuori dal Desktop;
+* `SqliteCorpusStore.CreateCorpusAsync` esegue l'inserimento in una transazione esplicita;
+* test per catalogo lingue, validazione, conteggi run, creazione, conferma e rollback su duplicato;
+* limite desktop delle run innalzato a 1000 per gestire database più ampi;
+* rinomina del corpus rinviata: non è necessaria per il flusso di analisi e richiederebbe una policy dedicata.
 
 ### Criteri di accettazione
 
 * un corpus può essere creato dalla UI senza usare la CLI;
 * nomi vuoti, duplicati o lingue non supportate sono rifiutati con messaggi chiari;
+* la selezione di un corpus filtra correttamente le run associate;
 * la UI non esegue SQL direttamente;
 * le operazioni di scrittura sono transazionali e testate;
-* le run esistenti continuano a essere consultabili senza regressioni.
+* la lingua selezionata è disponibile come vincolo per l'analisi EPUB;
+* le run esistenti continuano a essere consultabili senza regressioni;
+* build e test completati senza errori.
 
 ---
 

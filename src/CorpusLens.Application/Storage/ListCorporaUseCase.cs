@@ -10,6 +10,7 @@ public sealed class ListCorporaUseCase
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.DatabasePath);
 
         SqliteCorpusStore store = new(request.DatabasePath);
         return await store.ListCorporaAsync(cancellationToken).ConfigureAwait(false);

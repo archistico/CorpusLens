@@ -26,6 +26,22 @@ public sealed class SqliteCorpusStoreTests
     }
 
     [Fact]
+    public async Task CreateCorpusAsync_DuplicateNameRollsBackTransaction()
+    {
+        using TestDatabase database = new();
+        SqliteCorpusStore store = new(database.Path);
+        await store.CreateCorpusAsync("Italian classics", "it", "First description");
+
+        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => store.CreateCorpusAsync("ITALIAN CLASSICS", "it", "Duplicate"));
+        IReadOnlyList<StoredCorpus> corpora = await store.ListCorporaAsync();
+
+        Assert.Contains("already exists", exception.Message);
+        StoredCorpus corpus = Assert.Single(corpora);
+        Assert.Equal("First description", corpus.Description);
+    }
+
+    [Fact]
     public async Task SaveImportedBookAsync_ShouldPersistBookAndChapters()
     {
         using TestDatabase database = new();

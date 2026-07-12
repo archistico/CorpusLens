@@ -24,6 +24,7 @@ It is CLI-first, testable, and stores analysis data in SQLite so that corpora ca
 - repeated phrase mining
 - import diagnostics for EPUB folders
 - desktop reports and exports explorer with safe operating-system opening
+- desktop corpus management with language validation and run filtering
 
 ## Requirements
 
@@ -32,7 +33,7 @@ It is CLI-first, testable, and stores analysis data in SQLite so that corpora ca
 
 ## Architecture note
 
-CorpusLens keeps analysis and storage logic outside the UI/CLI surfaces. Read-only orchestration for run lists, source books, corpus profiles, health checks and artifact-path resolution lives in `CorpusLens.Application/Queries`, so the CLI and the Avalonia desktop app share the same query services. The desktop layer uses feature-specific ViewModels coordinated by `MainWindowViewModel`; global busy/status state and cancellation are centralized. Opening a report or export is isolated in the desktop system-path launcher and never mutates the generated file.
+CorpusLens keeps analysis and storage logic outside the UI/CLI surfaces. Read-only orchestration for run lists, source books, corpus profiles, health checks and artifact-path resolution lives in `CorpusLens.Application/Queries`, while corpus creation and listing use dedicated application use cases in `CorpusLens.Application/Storage`. The CLI and Avalonia desktop app therefore share the same storage boundary. The desktop layer uses feature-specific ViewModels coordinated by `MainWindowViewModel`; global busy/status state and cancellation are centralized. Opening a report or export is isolated in the desktop system-path launcher and never mutates the generated file.
 
 ## Project layout
 
@@ -205,7 +206,7 @@ The Avalonia desktop project is available as an early shell:
 make desktop
 ```
 
-The desktop app can open an existing `corpuslens.db`, list runs, select a run, browse its ordered source books and chapters, preview the persisted clean text, and show a compact dashboard with core metrics, language profile, difficulty summary, top content/function words, recurring phrases and token-index health. It also includes an n-gram explorer for bigrams, trigrams and other stored sizes, with minimum-count thresholds, contained-term search, content/function-pattern filters, document counts and selectable sorting. The Reports and exports panel lists the Markdown report, CSV exports, extracted text and optional EPUB diagnostics, distinguishes missing recorded paths from non-generated artifacts, and can open an existing file or its output folder through the operating system. Database and explorer queries run in the background and show a progress indicator so the UI stays responsive. The chapter preview includes character, word and sentence counts, quality warnings, and case-insensitive search with previous/next match navigation. Superseded desktop operations are cancelled, and each explorer is isolated in a testable ViewModel.
+The desktop app can open an existing `corpuslens.db`, list and filter corpora, create a corpus with a validated language, show its associated runs, browse ordered source books and chapters, preview the persisted clean text, and display a compact run dashboard. Corpus creation is an explicit persistent write and requires confirmation in the UI. Supported corpus languages are English, Italian, French and German. The app also includes word, n-gram, collocation, phrase, comparison, and reports/exports explorers. Database and explorer queries run in the background and show a progress indicator so the UI stays responsive. Superseded desktop operations are cancelled, and each explorer is isolated in a testable ViewModel.
 
 ## Development
 
@@ -230,6 +231,7 @@ make check
 - `docs/milestone-18-10-chapters-explorer.md`
 - `docs/milestone-18-11-ngram-explorer.md`
 - `docs/milestone-18-12-report-export.md`
+- `docs/milestone-18-13-corpus-management.md`
 
 ### Desktop word explorer
 
@@ -244,7 +246,12 @@ Run the Avalonia desktop shell with:
 make desktop
 ```
 
-The desktop UI can open an existing `corpuslens.db`, list analysis runs, browse source books and their metadata, inspect ordered chapters and persisted clean text, show a run dashboard, inspect and open generated reports/exports, search words, explore n-grams, explore collocations, explore recurring phrases, and compare runs.
+The desktop UI can open an existing `corpuslens.db`, list and create corpora, filter analysis runs by corpus, browse source books and their metadata, inspect ordered chapters and persisted clean text, show a run dashboard, inspect and open generated reports/exports, search words, explore n-grams, explore collocations, explore recurring phrases, and compare runs.
+
+
+### Desktop corpus management
+
+The corpus panel lists every persisted corpus and an **All corpora** filter. Selecting a corpus limits the run navigator to its associated runs and shows the corpus id, language, description and timestamps. New corpora can be created with a unique name, an optional description and one of the supported language profiles (`en`, `it`, `fr`, `de`). Empty names, duplicate names and unsupported language codes are rejected before writing. The confirmation checkbox must be selected for each persistent create operation.
 
 ### Desktop compare runs
 

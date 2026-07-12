@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using CorpusLens.Application.Queries;
+using CorpusLens.Application.Storage;
 using CorpusLens.Domain.Storage;
 
 namespace CorpusLens.Desktop.ViewModels;
@@ -23,6 +24,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         CollocationsExplorerViewModel? collocationsExplorer = null,
         PhraseExplorerViewModel? phraseExplorer = null,
         CompareRunsViewModel? compareRuns = null,
+        CorpusManagementViewModel? corpora = null,
         DesktopOperationStateViewModel? operationState = null,
         Func<string, CancellationToken, Task<IReadOnlyList<StoredAnalysisRunSummary>>>? runLoader = null)
     {
@@ -35,6 +37,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         CollocationsExplorer = collocationsExplorer ?? new CollocationsExplorerViewModel();
         PhraseExplorer = phraseExplorer ?? new PhraseExplorerViewModel();
         CompareRuns = compareRuns ?? new CompareRunsViewModel();
+        Corpora = corpora ?? new CorpusManagementViewModel();
         OperationState = operationState ?? new DesktopOperationStateViewModel();
         _runLoader = runLoader ?? LoadRunsFromApplicationAsync;
 
@@ -47,6 +50,19 @@ public sealed class MainWindowViewModel : ViewModelBase
         ForwardPropertyChanges(CollocationsExplorer);
         ForwardPropertyChanges(PhraseExplorer);
         ForwardPropertyChanges(CompareRuns);
+        ForwardPropertyChanges(Corpora);
+        Corpora.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(CorpusManagementViewModel.Summary))
+            {
+                OnPropertyChanged(nameof(CorpusSummary));
+            }
+
+            if (args.PropertyName == nameof(CorpusManagementViewModel.Details))
+            {
+                OnPropertyChanged(nameof(CorpusDetails));
+            }
+        };
         ForwardPropertyChanges(OperationState);
     }
 
@@ -68,6 +84,8 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     public CompareRunsViewModel CompareRuns { get; }
 
+    public CorpusManagementViewModel Corpora { get; }
+
     public DesktopOperationStateViewModel OperationState { get; }
 
     public string DatabasePath
@@ -77,6 +95,10 @@ public sealed class MainWindowViewModel : ViewModelBase
     }
 
     public ObservableCollection<RunListItemViewModel> Runs { get; } = new();
+
+    public ObservableCollection<RunListItemViewModel> VisibleRuns { get; } = new();
+
+    public ObservableCollection<CorpusListItemViewModel> CorpusItems => Corpora.Corpora;
 
     public ObservableCollection<RunBookListItemViewModel> RunBooks => Books.RunBooks;
 
@@ -93,6 +115,16 @@ public sealed class MainWindowViewModel : ViewModelBase
     public string StatusMessage => OperationState.StatusMessage;
 
     public bool IsBusy => OperationState.IsBusy;
+
+    public CorpusListItemViewModel? SelectedCorpus => Corpora.SelectedCorpus;
+
+    public string CorpusSummary => Corpora.Summary;
+
+    public string CorpusDetails => Corpora.Details;
+
+    public IReadOnlyList<CorpusLanguageOption> SupportedCorpusLanguages => Corpora.SupportedLanguages;
+
+    public CorpusLanguageOption? DefaultCorpusLanguage => Corpora.DefaultLanguage;
 
     public string RunTitle => Dashboard.RunTitle;
 
@@ -239,6 +271,14 @@ public sealed class MainWindowViewModel : ViewModelBase
             return;
         }
 
+        if (!string.Equals(DatabasePath, databasePath, StringComparison.OrdinalIgnoreCase))
+        {
+            Runs.Clear();
+            VisibleRuns.Clear();
+            Corpora.Clear("Loading corpora from database...");
+            ClearSelectedRun("Loading runs from database...");
+        }
+
         DatabasePath = databasePath;
         await RefreshRunsAsync(cancellationToken).ConfigureAwait(true);
     }
@@ -249,13 +289,15 @@ public sealed class MainWindowViewModel : ViewModelBase
         {
             CancelCurrentOperation();
             Runs.Clear();
+            VisibleRuns.Clear();
+            Corpora.Clear("Open a CorpusLens SQLite database first.");
             ClearSelectedRun("No valid database selected.");
             OperationState.SetStatus("Open a CorpusLens SQLite database first.");
             return;
         }
 
         await ExecuteBusyAsync(
-            "Loading runs from database...",
+            "Loading corpora and runs from database...",
             async token =>
             {
                 string databasePath = DatabasePath;
@@ -269,24 +311,124 @@ public sealed class MainWindowViewModel : ViewModelBase
                     Runs.Add(new RunListItemViewModel(run));
                 }
 
+                await Corpora.LoadAsync(databasePath, Runs, token).ConfigureAwait(true);
+                RebuildVisibleRuns();
                 CompareRuns.EnsureDefaultRightRun(Runs, SelectedRun);
-                if (Runs.Count == 0)
+                if (VisibleRuns.Count == 0)
                 {
-                    ClearSelectedRun("The database was opened, but it does not contain analysis runs.");
-                    return "Database loaded. No runs found.";
+                    string message = Runs.Count == 0
+                        ? "The database was opened, but it does not contain analysis runs."
+                        : "The selected corpus does not contain analysis runs.";
+                    ClearSelectedRun(message);
+                    return $"Loaded {Corpora.Corpora.Count - 1} corpus/corpora and {Runs.Count} run(s).";
                 }
 
-                await SelectRunCoreAsync(Runs[0], token).ConfigureAwait(true);
-                return $"Loaded {Runs.Count} run(s).";
+                RunListItemViewModel? runToSelect = SelectedRun is not null
+                    && VisibleRuns.Contains(SelectedRun)
+                        ? SelectedRun
+                        : VisibleRuns[0];
+                await SelectRunCoreAsync(runToSelect, token).ConfigureAwait(true);
+                return $"Loaded {Corpora.Corpora.Count - 1} corpus/corpora and {Runs.Count} run(s).";
             },
             "Loading cancelled.",
             ex => $"Error loading database: {ex.Message}",
             ex =>
             {
                 Runs.Clear();
+                VisibleRuns.Clear();
+                Corpora.Clear("Could not load corpora from this database.");
                 ClearSelectedRun("Could not load runs from this database.");
             },
             cancellationToken).ConfigureAwait(true);
+    }
+
+
+    public async Task SelectCorpusAsync(
+        CorpusListItemViewModel? corpus,
+        CancellationToken cancellationToken = default)
+    {
+        Corpora.SetSelectedCorpus(corpus);
+        RebuildVisibleRuns();
+        CompareRuns.EnsureDefaultRightRun(Runs, SelectedRun);
+        CorpusListItemViewModel? selectedCorpus = Corpora.SelectedCorpus;
+        bool isSpecificCorpus = selectedCorpus is { IsAllCorpora: false };
+
+        if (VisibleRuns.Count == 0)
+        {
+            ClearSelectedRun(isSpecificCorpus
+                ? "The selected corpus does not contain analysis runs."
+                : "The database does not contain analysis runs.");
+            OperationState.SetStatus(isSpecificCorpus
+                ? $"Corpus '{selectedCorpus!.Name}' selected. No runs found."
+                : "All corpora selected. No runs found.");
+            return;
+        }
+
+        if (SelectedRun is not null && VisibleRuns.Contains(SelectedRun))
+        {
+            OperationState.SetStatus(isSpecificCorpus
+                ? $"Showing {VisibleRuns.Count} run(s) for corpus '{selectedCorpus!.Name}'."
+                : $"Showing all {VisibleRuns.Count} run(s)." );
+            return;
+        }
+
+        await SelectRunAsync(VisibleRuns[0], cancellationToken).ConfigureAwait(true);
+    }
+
+    public async Task CreateCorpusAsync(
+        string? name,
+        string? languageCode,
+        string? description,
+        bool confirmed,
+        CancellationToken cancellationToken = default)
+    {
+        if (!File.Exists(DatabasePath))
+        {
+            OperationState.SetStatus("Open a CorpusLens SQLite database before creating a corpus.");
+            return;
+        }
+
+        if (!confirmed)
+        {
+            OperationState.SetStatus("Confirm the persistent write before creating the corpus.");
+            return;
+        }
+
+        if (!Corpora.TryValidateCreateInput(
+            name,
+            languageCode,
+            out string normalizedName,
+            out string normalizedLanguage,
+            out string validationError))
+        {
+            OperationState.SetStatus(validationError);
+            return;
+        }
+
+        await ExecuteBusyAsync(
+            $"Creating corpus '{normalizedName}'...",
+            async token =>
+            {
+                StoredCorpus created = await Corpora.CreateAsync(
+                    DatabasePath,
+                    normalizedName,
+                    normalizedLanguage,
+                    description,
+                    Runs,
+                    token).ConfigureAwait(true);
+                RebuildVisibleRuns();
+                ClearSelectedRun("The new corpus does not contain analysis runs yet.");
+                return $"Corpus '{created.Name}' [{created.LanguageCode}] created successfully.";
+            },
+            "Corpus creation cancelled.",
+            ex => $"Could not create corpus: {ex.Message}",
+            null,
+            cancellationToken).ConfigureAwait(true);
+    }
+
+    public bool IsSelectedCorpusLanguageCompatible(string? languageCode)
+    {
+        return Corpora.IsSelectedCorpusLanguageCompatible(languageCode);
     }
 
     public async Task SelectRunAsync(
@@ -738,6 +880,25 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
     }
 
+
+    private void RebuildVisibleRuns()
+    {
+        VisibleRuns.Clear();
+        long? corpusId = Corpora.SelectedCorpusId;
+        foreach (RunListItemViewModel run in Runs)
+        {
+            if (corpusId is null || run.Summary.CorpusId == corpusId.Value)
+            {
+                VisibleRuns.Add(run);
+            }
+        }
+
+        if (SelectedRun is not null && VisibleRuns.Contains(SelectedRun))
+        {
+            OnPropertyChanged(nameof(SelectedRun));
+        }
+    }
+
     private void ClearSelectedRun(string message)
     {
         SelectedRun = null;
@@ -825,7 +986,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         return Task.Run(async () =>
         {
             AnalysisRunQueryService service = new(databasePath);
-            return await service.ListRunsAsync(limit: 100, cancellationToken: cancellationToken)
+            return await service.ListRunsAsync(limit: 1000, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
         }, cancellationToken);
     }

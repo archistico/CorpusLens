@@ -1685,3 +1685,23 @@ MainWindowViewModel
 `StoredAnalysisRun` remains the authoritative source for the report, word CSV, n-gram CSV, next-word CSV and extracted-text paths. The Application query service resolves absolute paths and the relative-path layouts normally produced by the CLI. A non-empty recorded path whose file no longer exists is classified as `Missing`; an empty path is classified as `NotGenerated`. The two EPUB-folder diagnostics are legacy optional artifacts that are discovered by filename in the resolved output directory because their paths are not currently persisted in `AnalysisRun`.
 
 The Desktop layer owns only selection, display state and requests to open a target. `SystemPathLauncher` validates existence, passes the full path directly to `ProcessStartInfo` with `UseShellExecute = true`, and supplies no shell command or user-controlled arguments. Exported files are never rewritten by the explorer.
+
+## Desktop corpus management
+
+Milestone 18.13 introduces the first controlled desktop write path while preserving the existing architecture boundary:
+
+```text
+MainWindow
+  -> MainWindowViewModel
+    -> CorpusManagementViewModel
+      -> CreateCorpusUseCase / ListCorporaUseCase
+        -> SqliteCorpusStore
+```
+
+The Desktop layer never opens a SQLite connection and never constructs SQL. It owns only form state, explicit write confirmation, corpus selection and run filtering. `CorpusLanguageCatalog` is the authoritative application-level catalog for supported corpus languages and normalizes regional forms such as `fr-FR` to `fr`. `CreateCorpusUseCase` validates the database path, corpus name and language before invoking Infrastructure.
+
+`SqliteCorpusStore.CreateCorpusAsync` performs the insert in an explicit transaction. The database unique constraint remains the final protection against concurrent duplicate names, while the ViewModel performs an earlier case-insensitive check to provide immediate feedback.
+
+The run list loaded by `MainWindowViewModel` remains the common source for dashboard and comparison features. `VisibleRuns` is a filtered presentation collection based on the selected corpus; `Runs` keeps the complete loaded set so cross-corpus comparison remains available. The selected corpus language is exposed through `IsSelectedCorpusLanguageCompatible` and becomes the language constraint used by the EPUB-analysis workflow in Milestone 18.14.
+
+Corpus renaming is deliberately excluded from this milestone. Creation is append-only, existing corpus identities are stable, and no migration or update policy is introduced before the analysis workflow is complete.
